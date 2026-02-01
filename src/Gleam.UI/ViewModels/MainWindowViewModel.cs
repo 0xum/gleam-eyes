@@ -77,6 +77,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             IsRunning = true;
+            _composer.Reset();
             _cts = new CancellationTokenSource();
             _camera = CameraFactory.CreateDefault();
             _camera.FrameArrived += OnFrameArrived;
@@ -99,7 +100,6 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task StopAsync()
     {
-        ClearPreview();
         try
         {
             _cts?.Cancel();
@@ -112,19 +112,31 @@ public partial class MainWindowViewModel : ObservableObject
                 _camera.FrameArrived -= OnFrameArrived;
                 _camera.Dispose();
             }
+
+            if (_consumerTask is { IsCompleted: false })
+            {
+                await _consumerTask.ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
-            StatusText = $"Stop failed: {ex.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                StatusText = $"Stop failed: {ex.Message}";
+            });
         }
         finally
         {
             _camera = null;
             _cts = null;
-            StatusText = "Stopped";
-            IsRunning = false;
-            ClearPreview();
-            ClearDebugInfo();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                StatusText = "Stopped";
+                IsRunning = false;
+                ClearPreview();
+                ClearDebugInfo();
+                _composer.Reset();
+            });
         }
     }
 
@@ -196,17 +208,22 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void UpdatePreview(WriteableBitmap bitmap)
     {
+        Bitmap? previous;
         lock (_imageLock)
         {
-            if (!ReferenceEquals(PreviewImage, bitmap))
-            {
-                PreviewImage?.Dispose();
-                PreviewImage = bitmap;
-            }
-            else
+            if (ReferenceEquals(PreviewImage, bitmap))
             {
                 OnPropertyChanged(nameof(PreviewImage));
+                return;
             }
+
+            previous = PreviewImage;
+            PreviewImage = bitmap;
+        }
+
+        if (previous != null)
+        {
+            Dispatcher.UIThread.Post(previous.Dispose, DispatcherPriority.Background);
         }
     }
 
@@ -214,10 +231,16 @@ public partial class MainWindowViewModel : ObservableObject
     {
         Dispatcher.UIThread.Post(() =>
         {
+            Bitmap? previous;
             lock (_imageLock)
             {
-                PreviewImage?.Dispose();
+                previous = PreviewImage;
                 PreviewImage = null;
+            }
+
+            if (previous != null)
+            {
+                Dispatcher.UIThread.Post(previous.Dispose, DispatcherPriority.Background);
             }
         });
     }
@@ -233,7 +256,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnIsRunningChanged(bool value)
     {
-        StartCommand.NotifyCanExecuteChanged();
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            StartCommand.NotifyCanExecuteChanged();
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() => StartCommand.NotifyCanExecuteChanged());
     }
 
     private void UpdateFrameInfo(string info)

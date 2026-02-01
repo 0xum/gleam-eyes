@@ -64,6 +64,16 @@ public sealed class OverlayBitmapComposer
         return _bitmap;
     }
 
+    public void Reset()
+    {
+        _bitmap?.Dispose();
+        _skBitmap?.Dispose();
+        _bitmap = null;
+        _skBitmap = null;
+        _width = 0;
+        _height = 0;
+    }
+
     private void EnsureBuffers(int width, int height)
     {
         if (_bitmap != null && width == _width && height == _height)
