@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AvaloniaProject">
+    <option name="projectPerEditor">
+      <map>
+        <entry key="Capture/MainWindow.axaml" value="Capture/Capture.csproj" />
+        <entry key="GestureEngine.UI/MainWindow.axaml" value="GestureEngine.UI/GestureEngine.UI.csproj" />
+        <entry key="Test/MainWindow.axaml" value="Test/Test.csproj" />
+      </map>
+    </option>
+  </component>
+</project>

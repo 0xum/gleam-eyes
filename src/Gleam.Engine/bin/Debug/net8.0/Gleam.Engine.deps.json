@@ -1,0 +1,59 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "Gleam.Engine/1.0.0": {
+        "dependencies": {
+          "FlashCap": "1.11.0"
+        },
+        "runtime": {
+          "Gleam.Engine.dll": {}
+        }
+      },
+      "FlashCap/1.11.0": {
+        "dependencies": {
+          "FlashCap.Core": "1.11.0"
+        },
+        "runtime": {
+          "lib/net8.0/FlashCap.dll": {
+            "assemblyVersion": "1.11.0.0",
+            "fileVersion": "2025.4.1.34893"
+          }
+        }
+      },
+      "FlashCap.Core/1.11.0": {
+        "runtime": {
+          "lib/net8.0/FlashCap.Core.dll": {
+            "assemblyVersion": "1.11.0.0",
+            "fileVersion": "2025.4.1.34893"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Gleam.Engine/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "FlashCap/1.11.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-XwH9DHLKGUTciHat2D7GgsUegAOErJAyZHX+3H5gHX70Ipds7Zv2/q3T9/f0KkIh2A5P6WCg+lFwVxMgLERCKA==",
+      "path": "flashcap/1.11.0",
+      "hashPath": "flashcap.1.11.0.nupkg.sha512"
+    },
+    "FlashCap.Core/1.11.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-vEEUwQmpITV2iBgRU+YYl+Dr+Tm/1T/nXfnSLyLQSbBIWMlF/NO22OqU4ysfSNEb9TN6w+QK0bqGFMmnN13+Ag==",
+      "path": "flashcap.core/1.11.0",
+      "hashPath": "flashcap.core.1.11.0.nupkg.sha512"
+    }
+  }
+}

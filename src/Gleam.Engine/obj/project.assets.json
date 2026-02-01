@@ -1,0 +1,202 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "FlashCap/1.11.0": {
+        "type": "package",
+        "dependencies": {
+          "FlashCap.Core": "1.11.0"
+        },
+        "compile": {
+          "lib/net8.0/FlashCap.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/FlashCap.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "FlashCap.Core/1.11.0": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/FlashCap.Core.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/FlashCap.Core.dll": {
+            "related": ".xml"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "FlashCap/1.11.0": {
+      "sha512": "XwH9DHLKGUTciHat2D7GgsUegAOErJAyZHX+3H5gHX70Ipds7Zv2/q3T9/f0KkIh2A5P6WCg+lFwVxMgLERCKA==",
+      "type": "package",
+      "path": "flashcap/1.11.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "FlashCap.100.png",
+        "flashcap.1.11.0.nupkg.sha512",
+        "flashcap.nuspec",
+        "lib/net35/FlashCap.dll",
+        "lib/net35/FlashCap.xml",
+        "lib/net40/FlashCap.dll",
+        "lib/net40/FlashCap.xml",
+        "lib/net45/FlashCap.dll",
+        "lib/net45/FlashCap.xml",
+        "lib/net461/FlashCap.dll",
+        "lib/net461/FlashCap.xml",
+        "lib/net48/FlashCap.dll",
+        "lib/net48/FlashCap.xml",
+        "lib/net5.0/FlashCap.dll",
+        "lib/net5.0/FlashCap.xml",
+        "lib/net6.0/FlashCap.dll",
+        "lib/net6.0/FlashCap.xml",
+        "lib/net7.0/FlashCap.dll",
+        "lib/net7.0/FlashCap.xml",
+        "lib/net8.0/FlashCap.dll",
+        "lib/net8.0/FlashCap.xml",
+        "lib/net9.0/FlashCap.dll",
+        "lib/net9.0/FlashCap.xml",
+        "lib/netcoreapp2.0/FlashCap.dll",
+        "lib/netcoreapp2.0/FlashCap.xml",
+        "lib/netcoreapp2.1/FlashCap.dll",
+        "lib/netcoreapp2.1/FlashCap.xml",
+        "lib/netcoreapp2.2/FlashCap.dll",
+        "lib/netcoreapp2.2/FlashCap.xml",
+        "lib/netcoreapp3.0/FlashCap.dll",
+        "lib/netcoreapp3.0/FlashCap.xml",
+        "lib/netcoreapp3.1/FlashCap.dll",
+        "lib/netcoreapp3.1/FlashCap.xml",
+        "lib/netstandard1.3/FlashCap.dll",
+        "lib/netstandard1.3/FlashCap.xml",
+        "lib/netstandard2.0/FlashCap.dll",
+        "lib/netstandard2.0/FlashCap.xml",
+        "lib/netstandard2.1/FlashCap.dll",
+        "lib/netstandard2.1/FlashCap.xml"
+      ]
+    },
+    "FlashCap.Core/1.11.0": {
+      "sha512": "vEEUwQmpITV2iBgRU+YYl+Dr+Tm/1T/nXfnSLyLQSbBIWMlF/NO22OqU4ysfSNEb9TN6w+QK0bqGFMmnN13+Ag==",
+      "type": "package",
+      "path": "flashcap.core/1.11.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "FlashCap.100.png",
+        "flashcap.core.1.11.0.nupkg.sha512",
+        "flashcap.core.nuspec",
+        "lib/net35/FlashCap.Core.dll",
+        "lib/net35/FlashCap.Core.xml",
+        "lib/net40/FlashCap.Core.dll",
+        "lib/net40/FlashCap.Core.xml",
+        "lib/net45/FlashCap.Core.dll",
+        "lib/net45/FlashCap.Core.xml",
+        "lib/net461/FlashCap.Core.dll",
+        "lib/net461/FlashCap.Core.xml",
+        "lib/net48/FlashCap.Core.dll",
+        "lib/net48/FlashCap.Core.xml",
+        "lib/net5.0/FlashCap.Core.dll",
+        "lib/net5.0/FlashCap.Core.xml",
+        "lib/net6.0/FlashCap.Core.dll",
+        "lib/net6.0/FlashCap.Core.xml",
+        "lib/net7.0/FlashCap.Core.dll",
+        "lib/net7.0/FlashCap.Core.xml",
+        "lib/net8.0/FlashCap.Core.dll",
+        "lib/net8.0/FlashCap.Core.xml",
+        "lib/net9.0/FlashCap.Core.dll",
+        "lib/net9.0/FlashCap.Core.xml",
+        "lib/netcoreapp2.0/FlashCap.Core.dll",
+        "lib/netcoreapp2.0/FlashCap.Core.xml",
+        "lib/netcoreapp2.1/FlashCap.Core.dll",
+        "lib/netcoreapp2.1/FlashCap.Core.xml",
+        "lib/netcoreapp2.2/FlashCap.Core.dll",
+        "lib/netcoreapp2.2/FlashCap.Core.xml",
+        "lib/netcoreapp3.0/FlashCap.Core.dll",
+        "lib/netcoreapp3.0/FlashCap.Core.xml",
+        "lib/netcoreapp3.1/FlashCap.Core.dll",
+        "lib/netcoreapp3.1/FlashCap.Core.xml",
+        "lib/netstandard1.3/FlashCap.Core.dll",
+        "lib/netstandard1.3/FlashCap.Core.xml",
+        "lib/netstandard2.0/FlashCap.Core.dll",
+        "lib/netstandard2.0/FlashCap.Core.xml",
+        "lib/netstandard2.1/FlashCap.Core.dll",
+        "lib/netstandard2.1/FlashCap.Core.xml"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0": [
+      "FlashCap >= 1.11.0"
+    ]
+  },
+  "packageFolders": {
+    "/home/delta/.nuget/packages/": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/Gleam.Engine.csproj",
+      "projectName": "Gleam.Engine",
+      "projectPath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/Gleam.Engine.csproj",
+      "packagesPath": "/home/delta/.nuget/packages/",
+      "outputPath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/obj/",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "/home/delta/.nuget/NuGet/NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "/usr/lib/dotnet/library-packs": {},
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      }
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "dependencies": {
+          "FlashCap": {
+            "target": "Package",
+            "version": "[1.11.0, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/8.0.122/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

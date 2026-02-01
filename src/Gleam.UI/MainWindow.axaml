@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:Gleam.Ui.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
+        x:Class="Gleam.Ui.MainWindow"
+        x:DataType="viewModels:MainWindowViewModel"
+        Title="Gleam.UI">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="12" Background="#14171A">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Content="Start" Command="{Binding StartCommand}" />
+                <Button Content="Stop" Command="{Binding StopCommand}" />
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="White" />
+            </StackPanel>
+        </Border>
+
+        <Grid ColumnDefinitions="2*,1*" RowDefinitions="*" Margin="12">
+            <Border Background="#111318" CornerRadius="8" Padding="8" Margin="0,0,12,0">
+                <Border CornerRadius="8" ClipToBounds="True">
+                    <Image Source="{Binding PreviewImage}" Stretch="Uniform"  />
+                </Border>
+            </Border>
+
+            <Border Grid.Column="1" Background="#1A1D22" CornerRadius="8" Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Debug" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding FpsText}" />
+                    <TextBlock Text="{Binding FrameInfoText}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

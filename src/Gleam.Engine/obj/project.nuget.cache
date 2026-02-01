@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "Ete2gAz4elQ=",
+  "success": true,
+  "projectFilePath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/Gleam.Engine.csproj",
+  "expectedPackageFiles": [
+    "/home/delta/.nuget/packages/flashcap/1.11.0/flashcap.1.11.0.nupkg.sha512",
+    "/home/delta/.nuget/packages/flashcap.core/1.11.0/flashcap.core.1.11.0.nupkg.sha512"
+  ],
+  "logs": []
+}
