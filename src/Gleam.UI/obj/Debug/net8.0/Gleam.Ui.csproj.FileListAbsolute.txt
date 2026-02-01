@@ -77,3 +77,4 @@
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/Gleam.Ui.csproj.CopyComplete
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/Gleam.Ui.genruntimeconfig.cache
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/ref/Gleam.Ui.dll
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/Gleam.Ui.sourcelink.json

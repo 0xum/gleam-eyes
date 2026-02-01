@@ -130,6 +130,10 @@
             "FlashCap": {
               "target": "Package",
               "version": "[1.11.0, )"
+            },
+            "SkiaSharp": {
+              "target": "Package",
+              "version": "[2.88.9, )"
             }
           },
           "imports": [

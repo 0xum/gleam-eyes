@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gleam.Engine.Capture;
 using Gleam.Engine.Frames;
+using Gleam.Engine.Overlays;
 using Gleam.Engine.Pipeline;
 using Gleam.Ui.Imaging;
 
@@ -18,6 +19,10 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly FramePipeline _pipeline = new();
     private readonly Stopwatch _fpsStopwatch = new();
     private readonly object _imageLock = new();
+    private readonly OverlayModuleRegistry _overlayRegistry = new();
+    private readonly BasicGridOverlayModule _gridModule = new();
+    private readonly AnimatedShapesOverlayModule _animatedModule = new();
+    private readonly OverlayBitmapComposer _composer = new();
     private int _frameCounter;
     private CancellationTokenSource? _cts;
     private Task? _consumerTask;
@@ -37,6 +42,28 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string frameInfoText = "Frame: -";
+
+    [ObservableProperty]
+    private bool isGridEnabled = true;
+
+    [ObservableProperty]
+    private bool isAnimatedEnabled;
+
+    public MainWindowViewModel()
+    {
+        _overlayRegistry.Register(_gridModule);
+        _overlayRegistry.Register(_animatedModule);
+    }
+
+    partial void OnIsGridEnabledChanged(bool value)
+    {
+        _gridModule.IsEnabled = value;
+    }
+
+    partial void OnIsAnimatedEnabledChanged(bool value)
+    {
+        _animatedModule.IsEnabled = value;
+    }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
@@ -122,12 +149,13 @@ public partial class MainWindowViewModel : ObservableObject
                 {
                     break;
                 }
-                Bitmap? bitmap = null;
+                WriteableBitmap? bitmap = null;
                 string? errorText = null;
 
                 try
                 {
-                    bitmap = FrameToBitmap.Convert(frame);
+                    var scene = _overlayRegistry.BuildScene(frame);
+                    bitmap = _composer.Compose(frame, scene);
                     var info = $"Frame: {frame.Width}x{frame.Height} ({frame.PixelFormat})";
                     UpdateFrameInfo(info);
                 }
@@ -166,12 +194,19 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private void UpdatePreview(Bitmap bitmap)
+    private void UpdatePreview(WriteableBitmap bitmap)
     {
         lock (_imageLock)
         {
-            PreviewImage?.Dispose();
-            PreviewImage = bitmap;
+            if (!ReferenceEquals(PreviewImage, bitmap))
+            {
+                PreviewImage?.Dispose();
+                PreviewImage = bitmap;
+            }
+            else
+            {
+                OnPropertyChanged(nameof(PreviewImage));
+            }
         }
     }
 

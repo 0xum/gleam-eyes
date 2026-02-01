@@ -15,7 +15,8 @@
           "Avalonia.Themes.Fluent": "11.3.11",
           "CommunityToolkit.Mvvm": "8.4.0",
           "FlashCap": "1.11.0",
-          "Gleam.Engine": "1.0.0"
+          "Gleam.Engine": "1.0.0",
+          "SkiaSharp": "2.88.9"
         },
         "runtime": {
           "Gleam.Ui.dll": {}

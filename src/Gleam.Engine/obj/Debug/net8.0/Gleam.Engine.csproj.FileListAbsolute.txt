@@ -10,3 +10,4 @@
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/obj/Debug/net8.0/refint/Gleam.Engine.dll
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/obj/Debug/net8.0/Gleam.Engine.pdb
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/obj/Debug/net8.0/ref/Gleam.Engine.dll
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/obj/Debug/net8.0/Gleam.Engine.sourcelink.json
