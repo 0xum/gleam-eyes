@@ -6,7 +6,7 @@ public interface IOverlayModule
 {
     string Name { get; }
 
-    bool IsEnabled { get; }
+    bool IsEnabled { get; set; }
 
     void BuildOverlays(in RawFrame frame, OverlayScene scene);
 }

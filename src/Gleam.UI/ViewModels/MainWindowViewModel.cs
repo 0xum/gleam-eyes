@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,8 +9,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Gleam.Engine.Capture;
 using Gleam.Engine.Frames;
+using Gleam.Engine.Modules;
 using Gleam.Engine.Overlays;
+using Gleam.Engine.Processing;
 using Gleam.Engine.Pipeline;
+using Gleam.Engine.Plugins;
 using Gleam.Ui.Imaging;
 
 namespace Gleam.Ui.ViewModels;
@@ -19,10 +23,12 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly FramePipeline _pipeline = new();
     private readonly Stopwatch _fpsStopwatch = new();
     private readonly object _imageLock = new();
-    private readonly OverlayModuleRegistry _overlayRegistry = new();
+    private readonly FrameProcessingRegistry _processingRegistry = new();
+    private readonly ObservableCollection<IFrameProcessingPlugin> _plugins = new();
     private readonly BasicGridOverlayModule _gridModule = new();
     private readonly AnimatedShapesOverlayModule _animatedModule = new();
     private readonly OverlayBitmapComposer _composer = new();
+    private readonly SampleGesturePlugin _sampleGesture = new();
     private int _frameCounter;
     private CancellationTokenSource? _cts;
     private Task? _consumerTask;
@@ -49,10 +55,22 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool isAnimatedEnabled;
 
+    public ReadOnlyObservableCollection<IFrameProcessingPlugin> Plugins { get; }
+
     public MainWindowViewModel()
     {
-        _overlayRegistry.Register(_gridModule);
-        _overlayRegistry.Register(_animatedModule);
+        Plugins = new ReadOnlyObservableCollection<IFrameProcessingPlugin>(_plugins);
+        RegisterPlugin(new OverlayModulePluginAdapter(_gridModule));
+        RegisterPlugin(new OverlayModulePluginAdapter(_animatedModule));
+        RegisterPlugin(_sampleGesture);
+    }
+
+    private void RegisterPlugin(IFrameProcessingPlugin plugin)
+    {
+        if (_processingRegistry.Register(plugin))
+        {
+            _plugins.Add(plugin);
+        }
     }
 
     partial void OnIsGridEnabledChanged(bool value)
@@ -166,8 +184,8 @@ public partial class MainWindowViewModel : ObservableObject
 
                 try
                 {
-                    var scene = _overlayRegistry.BuildScene(frame);
-                    bitmap = _composer.Compose(frame, scene);
+                    var processingResult = _processingRegistry.Process(frame);
+                    bitmap = _composer.Compose(frame, processingResult.Scene);
                     var info = $"Frame: {frame.Width}x{frame.Height} ({frame.PixelFormat})";
                     UpdateFrameInfo(info);
                 }

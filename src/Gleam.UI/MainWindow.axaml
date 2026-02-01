@@ -24,19 +24,29 @@
             </Border>
 
             <Border Grid.Column="1" Background="#1A1D22" CornerRadius="8" Padding="12">
-                <StackPanel Spacing="12">
+                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="16">
                     <StackPanel Spacing="8">
                         <TextBlock Text="Debug" FontSize="18" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding FpsText}" />
                         <TextBlock Text="{Binding FrameInfoText}" TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Options" FontSize="16" FontWeight="SemiBold" />
-                        <CheckBox Content="Basic grid" IsChecked="{Binding IsGridEnabled}" />
-                        <CheckBox Content="Animated shapes" IsChecked="{Binding IsAnimatedEnabled}" />
+                    <StackPanel Grid.Row="1" Spacing="6">
+                        <TextBlock Text="Plugins" FontSize="16" FontWeight="SemiBold" />
+                        <Border Background="#111318" CornerRadius="6" Padding="8">
+                            <ItemsControl ItemsSource="{Binding Plugins}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel LastChildFill="True">
+                                            <CheckBox DockPanel.Dock="Right" IsChecked="{Binding IsEnabled}" />
+                                            <TextBlock Text="{Binding Name}" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
                     </StackPanel>
-                </StackPanel>
+                </Grid>
             </Border>
         </Grid>
     </DockPanel>

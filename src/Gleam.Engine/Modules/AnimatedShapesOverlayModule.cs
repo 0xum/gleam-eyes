@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Gleam.Engine.Frames;
+using Gleam.Engine.Overlays;
 
-namespace Gleam.Engine.Overlays;
+namespace Gleam.Engine.Modules;
 
 public sealed class AnimatedShapesOverlayModule : IOverlayModule
 {

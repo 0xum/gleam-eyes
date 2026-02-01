@@ -1,6 +1,7 @@
 using Gleam.Engine.Frames;
+using Gleam.Engine.Overlays;
 
-namespace Gleam.Engine.Overlays;
+namespace Gleam.Engine.Modules;
 
 public sealed class BasicGridOverlayModule : IOverlayModule
 {
