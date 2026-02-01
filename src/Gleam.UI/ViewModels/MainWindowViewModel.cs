@@ -23,8 +23,8 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly FramePipeline _pipeline = new();
     private readonly Stopwatch _fpsStopwatch = new();
     private readonly object _imageLock = new();
-    private readonly FrameProcessingRegistry _processingRegistry = new();
-    private readonly ObservableCollection<IFrameProcessingPlugin> _plugins = new();
+    private readonly PluginHandler _pluginHandler = new();
+    private readonly ObservableCollection<PluginDescriptor> _plugins = new();
     private readonly BasicGridOverlayModule _gridModule = new();
     private readonly AnimatedShapesOverlayModule _animatedModule = new();
     private readonly OverlayBitmapComposer _composer = new();
@@ -55,21 +55,31 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool isAnimatedEnabled;
 
-    public ReadOnlyObservableCollection<IFrameProcessingPlugin> Plugins { get; }
+    public ReadOnlyObservableCollection<PluginDescriptor> Plugins { get; }
 
     public MainWindowViewModel()
     {
-        Plugins = new ReadOnlyObservableCollection<IFrameProcessingPlugin>(_plugins);
-        RegisterPlugin(new OverlayModulePluginAdapter(_gridModule));
-        RegisterPlugin(new OverlayModulePluginAdapter(_animatedModule));
-        RegisterPlugin(_sampleGesture);
+        Plugins = new ReadOnlyObservableCollection<PluginDescriptor>(_plugins);
+        _pluginHandler.LoadPlugins();
+        RegisterBuiltIn(new OverlayModulePluginAdapter(_gridModule), _gridModule.Name, "Overlay grid", "1.0.0");
+        RegisterBuiltIn(new OverlayModulePluginAdapter(_animatedModule), _animatedModule.Name, "Overlay animado", "1.0.0");
+        RefreshPlugins();
     }
 
-    private void RegisterPlugin(IFrameProcessingPlugin plugin)
+    private void RegisterBuiltIn(IFrameProcessingPlugin plugin, string name, string description, string version)
     {
-        if (_processingRegistry.Register(plugin))
+        if (plugin is not null)
         {
-            _plugins.Add(plugin);
+            _pluginHandler.RegisterPlugin(plugin, new PluginMetadataAttribute(name, description, version), "built-in");
+        }
+    }
+
+    private void RefreshPlugins()
+    {
+        _plugins.Clear();
+        foreach (var descriptor in _pluginHandler.Plugins)
+        {
+            _plugins.Add(descriptor);
         }
     }
 
@@ -96,6 +106,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             IsRunning = true;
             _composer.Reset();
+            _pluginHandler.OnStartCapture();
             _cts = new CancellationTokenSource();
             _camera = CameraFactory.CreateDefault();
             _camera.FrameArrived += OnFrameArrived;
@@ -155,6 +166,7 @@ public partial class MainWindowViewModel : ObservableObject
                 ClearDebugInfo();
                 _composer.Reset();
             });
+            _pluginHandler.OnEndCapture();
         }
     }
 
@@ -184,7 +196,7 @@ public partial class MainWindowViewModel : ObservableObject
 
                 try
                 {
-                    var processingResult = _processingRegistry.Process(frame);
+                    var processingResult = _pluginHandler.OnUpdateCapture(frame);
                     bitmap = _composer.Compose(frame, processingResult.Scene);
                     var info = $"Frame: {frame.Width}x{frame.Height} ({frame.PixelFormat})";
                     UpdateFrameInfo(info);

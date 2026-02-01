@@ -4,26 +4,17 @@ using Gleam.Engine.Processing;
 
 namespace Gleam.Engine.Plugins;
 
+[PluginMetadata("SampleGesture", "Exemplo básico de plugin com overlay", "1.0.0")]
 public sealed class SampleGesturePlugin : IFrameProcessingPlugin
 {
-    public string Name => "SampleGesture";
-
     public bool IsEnabled { get; set; } = true;
 
-    public FrameProcessResult? Process(in RawFrame frame)
+    public void OnStartCapture(PluginStartContext context)
     {
-        if (frame.Width <= 0 || frame.Height <= 0)
-        {
-            return null;
-        }
-
-        var label = "Gesture: OpenHand";
-        var confidence = 0.42f;
-        return new FrameProcessResult(label, confidence);
     }
-
-    public void BuildOverlays(in RawFrame frame, OverlayScene scene)
+    public void OnUpdateCapture(PluginFrameContext context)
     {
+        var frame = context.Frame;
         if (frame.Width <= 0 || frame.Height <= 0)
         {
             return;
@@ -32,6 +23,10 @@ public sealed class SampleGesturePlugin : IFrameProcessingPlugin
         var center = new OverlayPoint(frame.Width / 2f, frame.Height / 2f);
         var stroke = new OverlayStroke(3f, new ColorRgba(255, 180, 80, 220));
         var fill = new OverlayFill(new ColorRgba(255, 180, 80, 40));
-        scene.Add(new OverlayCircle(center, MathF.Min(frame.Width, frame.Height) * 0.12f, stroke, fill));
+        context.Scene.Add(new OverlayCircle(center, MathF.Min(frame.Width, frame.Height) * 0.12f, stroke, fill));
+    }
+
+    public void OnEndCapture(PluginEndContext context)
+    {
     }
 }

@@ -29,49 +29,39 @@ Atualmente o preview suporta apenas `BGRA32`. Caso receba outro formato, o siste
 
 ## Plugins de processamento
 
-O Engine agora expõe um pipeline modular via `IFrameProcessingPlugin`, permitindo adicionar
-projetos externos que recebem os frames, processam dados e, opcionalmente, desenham overlays
-sem modificar a UI ou a Engine existente.
+O Engine agora expõe um pipeline modular via `IFrameProcessingPlugin`, carregado por reflection.
+Plugins podem estar no próprio código ou em bibliotecas dentro de `/plugins` na raiz do executável.
+Cada plugin recebe callbacks de ciclo de vida para iniciar, atualizar e encerrar o processamento.
 
 ### Como criar um plugin
 
-Crie uma classe que implemente `IFrameProcessingPlugin` (exemplo em `SampleGesturePlugin`).
+Crie uma classe que implemente `IFrameProcessingPlugin` e marque com `PluginMetadata`.
 
 ```csharp
 public sealed class HandGesturePlugin : IFrameProcessingPlugin
 {
-    public string Name => "HandGesture";
     public bool IsEnabled { get; set; } = true;
 
-    public FrameProcessResult? Process(in RawFrame frame)
+    public void OnStartCapture(PluginStartContext context) { }
+
+    public void OnUpdateCapture(PluginFrameContext context)
     {
         // Seu processamento aqui.
-        return new FrameProcessResult("Gesture: Pinch", 0.93f);
+        // context.Scene.Add(...); // Desenhar overlays opcionais.
     }
 
-    public void BuildOverlays(in RawFrame frame, OverlayScene scene)
-    {
-        // Desenhe overlays opcionais.
-    }
+    public void OnEndCapture(PluginEndContext context) { }
 }
 ```
 
-### Como registrar plugins
+### Carregamento e pasta /plugins
 
-Na UI, registre os plugins no `FrameProcessingRegistry`:
-
-```csharp
-_processingRegistry.Register(new HandGesturePlugin());
-```
-
-Para reutilizar módulos de overlay existentes, use o adaptador:
-
-```csharp
-_processingRegistry.Register(new OverlayModulePluginAdapter(_gridModule));
-```
+- Plugins internos são descobertos automaticamente no assembly principal.
+- DLLs externas são buscadas em `./plugins` (pasta ao lado do executável).
+- Tipos válidos precisam ter `PluginMetadataAttribute` e implementar `IFrameProcessingPlugin`.
 
 Próximos passos sugeridos:
 
 - Implementar conversores para `BGR24`, `RGB24`, `NV12`, `YUY2`.
 - Usar `WriteableBitmap` para reduzir alocações.
-- Conectar plugins reais de reconhecimento (ex: gestos de mão) no `FrameProcessingRegistry`.
+- Conectar plugins reais de reconhecimento (ex: gestos de mão) no `PluginHandler`.
