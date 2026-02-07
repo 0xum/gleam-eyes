@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gleam.Engine", "src\Gleam.E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gleam.Ui", "src\Gleam.UI\Gleam.Ui.csproj", "{C0334E7B-FD8D-43C9-A9A3-5634A8C5460F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gleam.Gestures", "src\Gleam.Gestures\Gleam.Gestures.csproj", "{243E116E-C90F-44B0-8788-07A4BDD93776}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,6 +40,18 @@ Global
 		{C0334E7B-FD8D-43C9-A9A3-5634A8C5460F}.Release|x64.Build.0 = Release|Any CPU
 		{C0334E7B-FD8D-43C9-A9A3-5634A8C5460F}.Release|x86.ActiveCfg = Release|Any CPU
 		{C0334E7B-FD8D-43C9-A9A3-5634A8C5460F}.Release|x86.Build.0 = Release|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Debug|x64.Build.0 = Debug|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Debug|x86.Build.0 = Debug|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Release|Any CPU.Build.0 = Release|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Release|x64.ActiveCfg = Release|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Release|x64.Build.0 = Release|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Release|x86.ActiveCfg = Release|Any CPU
+		{243E116E-C90F-44B0-8788-07A4BDD93776}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
