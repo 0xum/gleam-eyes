@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Gleam.Engine.Processing;
 using Gleam.Gestures.Models;
 
 namespace Gleam.Gestures.UI;
@@ -96,11 +97,18 @@ internal sealed class MediaPipePreviewWindowHost
             return;
         }
 
-        EnsureBitmap(frame.Width, frame.Height);
-        if (_bitmap == null || _scratchBgra == null)
+        if (frame.Width <= 0 || frame.Height <= 0)
         {
             return;
         }
+
+        try
+        {
+            EnsureBitmap(frame.Width, frame.Height);
+            if (_bitmap == null || _scratchBgra == null)
+            {
+                return;
+            }
 
             ConvertRgb24ToBgra32(frame.Data, frame.Width, frame.Height, _scratchBgra);
             using (var locked = _bitmap.Lock())
@@ -124,13 +132,18 @@ internal sealed class MediaPipePreviewWindowHost
                 }
             }
 
-        if (!ReferenceEquals(_image.Source, _bitmap))
-        {
-            _image.Source = _bitmap;
-        }
+            if (!ReferenceEquals(_image.Source, _bitmap))
+            {
+                _image.Source = _bitmap;
+            }
 
-        _image.InvalidateVisual();
-        _window.Title = $"MediaPipe - {frame.Width}x{frame.Height} [{frame.PixelFormat}]";
+            _image.InvalidateVisual();
+            _window.Title = $"MediaPipe INPUT - {frame.Width}x{frame.Height} [{frame.PixelFormat}] ts={frame.TimestampNs / 1_000_000.0:F1}ms";
+        }
+        catch (Exception)
+        {
+            // Ignore UI update errors
+        }
     }
 
     public void Close()
@@ -183,36 +196,31 @@ internal sealed class MediaPipePreviewWindowHost
     private static void ConvertRgb24ToBgra32(byte[] source, int width, int height, byte[] destination)
     {
         var pixelCount = width * height;
-        var expectedLength = pixelCount * 3;
-        if (source.Length < expectedLength)
+        var srcHandle = GCHandle.Alloc(source, GCHandleType.Pinned);
+        var dstHandle = GCHandle.Alloc(destination, GCHandleType.Pinned);
+
+        try
         {
-            throw new InvalidOperationException(
-                $"Invalid RGB24 frame: expected at least {expectedLength} bytes, got {source.Length}.");
+            unsafe
+            {
+                byte* srcPtr = (byte*)srcHandle.AddrOfPinnedObject();
+                byte* dstPtr = (byte*)dstHandle.AddrOfPinnedObject();
+
+                for (var i = 0; i < pixelCount; i++)
+                {
+                    var srcIdx = i * 3;
+                    var dstIdx = i << 2;
+                    dstPtr[dstIdx] = srcPtr[srcIdx + 2];     // B
+                    dstPtr[dstIdx + 1] = srcPtr[srcIdx + 1]; // G
+                    dstPtr[dstIdx + 2] = srcPtr[srcIdx];     // R
+                    dstPtr[dstIdx + 3] = byte.MaxValue;      // A
+                }
+            }
         }
-
-        var destinationLength = pixelCount * 4;
-        if (destination.Length < destinationLength)
+        finally
         {
-            throw new InvalidOperationException(
-                $"Invalid destination buffer: expected at least {destinationLength} bytes, got {destination.Length}.");
-        }
-
-        var sourceIndex = 0;
-        var destinationIndex = 0;
-
-        for (var i = 0; i < pixelCount; i++)
-        {
-            var r = source[sourceIndex];
-            var g = source[sourceIndex + 1];
-            var b = source[sourceIndex + 2];
-
-            destination[destinationIndex] = b;
-            destination[destinationIndex + 1] = g;
-            destination[destinationIndex + 2] = r;
-            destination[destinationIndex + 3] = byte.MaxValue;
-
-            sourceIndex += 3;
-            destinationIndex += 4;
+            srcHandle.Free();
+            dstHandle.Free();
         }
     }
 }

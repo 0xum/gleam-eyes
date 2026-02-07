@@ -25,9 +25,11 @@ namespace Gleam.Ui.ViewModels;
 public partial class MainWindowViewModel : ObservableObject
 {
     private const string GesturePluginTypeName = "Gleam.Gestures.GestureProcessingPlugin";
+    private const int UiStatsUpdateIntervalMs = 200;
 
     private readonly FramePipeline _pipeline = new();
     private readonly Stopwatch _fpsStopwatch = new();
+    private readonly Stopwatch _uiStatsStopwatch = new();
     private readonly object _imageLock = new();
     private readonly PluginHandler _pluginHandler = new();
     private readonly ObservableCollection<PluginDescriptor> _plugins = new();
@@ -341,6 +343,16 @@ public partial class MainWindowViewModel : ObservableObject
             _pluginTickCounter = 0;
             PluginTickText = "Ticks: 0";
             _fpsStopwatch.Restart();
+            _uiStatsStopwatch.Restart();
+            _latestComposedBitmap = null;
+            _previewVersion = 0;
+            _presentedPreviewVersion = 0;
+            _previewUpdateScheduled = 0;
+            _processElapsedTicksAcc = 0;
+            _composeElapsedTicksAcc = 0;
+            _processSampleCount = 0;
+            _previewEnqueueTick = 0;
+            _previewQueueDelayTicks = 0;
 
             _consumerTask = ConsumeFramesAsync(_cts.Token);
             UpdateGestureDebugButtonState();
@@ -424,11 +436,18 @@ public partial class MainWindowViewModel : ObservableObject
 
                 try
                 {
+                    var processStart = Stopwatch.GetTimestamp();
                     var processingResult = _pluginHandler.OnUpdateCapture(frame);
-                    UpdatePluginTicks();
+                    var processElapsed = Stopwatch.GetTimestamp() - processStart;
+
+                    var composeStart = Stopwatch.GetTimestamp();
                     bitmap = _composer.Compose(frame, processingResult.Scene);
-                    var info = $"Frame: {frame.Width}x{frame.Height} ({frame.PixelFormat})";
-                    UpdateFrameInfo(info);
+                    var composeElapsed = Stopwatch.GetTimestamp() - composeStart;
+
+                    _processElapsedTicksAcc += processElapsed;
+                    _composeElapsedTicksAcc += composeElapsed;
+                    _processSampleCount++;
+                    UpdateRealtimeStats(frame);
                 }
                 catch (Exception ex)
                 {
@@ -540,6 +559,13 @@ public partial class MainWindowViewModel : ObservableObject
                 Dispatcher.UIThread.Post(previous.Dispose, DispatcherPriority.Background);
             }
         });
+
+        _latestComposedBitmap = null;
+        Interlocked.Exchange(ref _previewVersion, 0);
+        Interlocked.Exchange(ref _presentedPreviewVersion, 0);
+        Interlocked.Exchange(ref _previewUpdateScheduled, 0);
+        Interlocked.Exchange(ref _previewEnqueueTick, 0);
+        Interlocked.Exchange(ref _previewQueueDelayTicks, 0);
     }
 
     private void ClearDebugInfo()
@@ -549,13 +575,29 @@ public partial class MainWindowViewModel : ObservableObject
             FpsText = "FPS: 0";
             FrameInfoText = "Frame: -";
             PluginTickText = "Ticks: 0";
+            PerformanceDebugText = "Perf: -";
         });
     }
 
-    private void UpdatePluginTicks()
+    private void UpdateRealtimeStats(RawFrame frame)
     {
         _pluginTickCounter++;
-        var text = $"Ticks: {_pluginTickCounter}";
+
+        if (_uiStatsStopwatch.ElapsedMilliseconds < UiStatsUpdateIntervalMs)
+        {
+            return;
+        }
+
+        var tickText = $"Ticks: {_pluginTickCounter}";
+        var frameInfo = $"Frame: {frame.Width}x{frame.Height} ({frame.PixelFormat})";
+        var sampleCount = Math.Max(_processSampleCount, 1);
+        var processMs = TicksToMs(_processElapsedTicksAcc / sampleCount);
+        var composeMs = TicksToMs(_composeElapsedTicksAcc / sampleCount);
+        var previewQueueMs = TicksToMs(Interlocked.Read(ref _previewQueueDelayTicks));
+        _processElapsedTicksAcc = 0;
+        _composeElapsedTicksAcc = 0;
+        _processSampleCount = 0;
+
         var gesturePerf = _gesturePluginInstance != null && _gestureRuntimePerfProperty != null
             ? _gestureRuntimePerfProperty.GetValue(_gesturePluginInstance) as string
             : null;
@@ -566,14 +608,24 @@ public partial class MainWindowViewModel : ObservableObject
             perfText = $"{perfText} | {gesturePerf}";
         }
 
-        if (Dispatcher.UIThread.CheckAccess())
+        _uiStatsStopwatch.Restart();
+
+        Dispatcher.UIThread.Post(() =>
         {
-            PluginTickText = text;
-        }
-        else
+            PluginTickText = tickText;
+            FrameInfoText = frameInfo;
+            PerformanceDebugText = perfText;
+        }, DispatcherPriority.Background);
+    }
+
+    private static double TicksToMs(long ticks)
+    {
+        if (ticks <= 0)
         {
-            Dispatcher.UIThread.Post(() => PluginTickText = text);
+            return 0d;
         }
+
+        return (ticks * 1000d) / Stopwatch.Frequency;
     }
 
     partial void OnIsRunningChanged(bool value)
@@ -590,18 +642,6 @@ public partial class MainWindowViewModel : ObservableObject
             StartCommand.NotifyCanExecuteChanged();
             OpenGestureDebugWindowCommand.NotifyCanExecuteChanged();
         });
-    }
-
-    private void UpdateFrameInfo(string info)
-    {
-        if (Dispatcher.UIThread.CheckAccess())
-        {
-            FrameInfoText = info;
-        }
-        else
-        {
-            Dispatcher.UIThread.Post(() => FrameInfoText = info);
-        }
     }
 
     private void UpdateFps()

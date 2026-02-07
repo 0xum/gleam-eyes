@@ -37,8 +37,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private int _frameCount;
     private int _preparedFrameCount;
     private int _droppedFrameCount;
-    private readonly object _previewSync = new();
-    private readonly object _landmarkSync = new();
     private readonly MediaPipePreviewWindowHost _previewWindow = new();
     private readonly MediaPipeGraphRunner _graphRunner = new();
     private readonly SemaphoreSlim _previewSignal = new(0, 1);
@@ -46,6 +44,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private Task? _previewLoopTask;
     private RawFrame? _latestRawFrame;
     private GestureLandmarkSnapshot _latestLandmarks = GestureLandmarkSnapshot.Empty;
+    private long _nextPreviewRenderTick;
     private int _landmarkDetectionCount;
     private int _lastDetectedHands;
     private int _lastDetectedPoints;
@@ -119,19 +118,13 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _preparedFrameCount = 0;
         _droppedFrameCount = 0;
         _landmarkDetectionCount = 0;
+        _lastDetectedHands = 0;
+        _lastDetectedPoints = 0;
         _mediaPipeFaulted = false;
+        _lastOverlayAgeUs = 0;
         _nextPreviewRenderTick = 0;
         _consecutiveEmptySnapshots = 0;
         _isCaptureRunning = true;
-        lock (_previewSync)
-        {
-            _latestRawFrame = null;
-        }
-
-        lock (_landmarkSync)
-        {
-            _latestLandmarks = GestureLandmarkSnapshot.Empty;
-        }
         Interlocked.Exchange(ref _latestRawFrame, null);
         Volatile.Write(ref _latestLandmarks, GestureLandmarkSnapshot.Empty);
 
@@ -169,11 +162,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _frameCount++;
         DrawLandmarksOverlay(context);
 
-        lock (_previewSync)
-        {
-            _latestRawFrame = context.Frame;
-        }
-
+        Interlocked.Exchange(ref _latestRawFrame, context.Frame);
+        
         if (_previewSignal.CurrentCount == 0)
         {
             _previewSignal.Release();
@@ -229,21 +219,23 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
             }
 
             PreparedFrame? frame;
-            RawFrame? rawFrame;
-            lock (_previewSync)
+            var rawFrame = Interlocked.Exchange(ref _latestRawFrame, null);
+            if (rawFrame == null)
             {
-                rawFrame = _latestRawFrame;
-                _latestRawFrame = null;
+                continue;
             }
 
-            frame = rawFrame == null ? null : MediaPipeFramePreprocessor.Prepare(rawFrame);
+            frame = MediaPipeFramePreprocessor.Prepare(rawFrame);
 
-            if (rawFrame != null && frame == null)
+            if (frame == null)
             {
                 _droppedFrameCount++;
+                if (_frameCount % 60 == 0)
+                {
+                    PluginLogger.Log($"GestureProcessingPlugin: frame preparation failed for format {rawFrame.PixelFormat}");
+                }
             }
-
-            if (frame != null)
+            else
             {
                 _preparedFrameCount++;
             }
@@ -322,26 +314,27 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     }
                 }
 
-                Dispatcher.UIThread.Post(() =>
+                var nowTick = Stopwatch.GetTimestamp();
+                var nextPreviewTick = Volatile.Read(ref _nextPreviewRenderTick);
+                if (nowTick >= nextPreviewTick)
                 {
-                    try
+                    Volatile.Write(ref _nextPreviewRenderTick, nowTick + PreviewUpdateIntervalTicks);
+                    Dispatcher.UIThread.Post(() =>
                     {
-                        _previewWindow.UpdateFrame(frame);
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLogger.Log($"GestureProcessingPlugin: failed to update preview window: {ex.Message}");
-                    }
-                }, DispatcherPriority.Background);
-            }
-
-            try
+                        try
+                        {
+            if (_frameCount % 120 == 0)
             {
-                await Task.Delay(PreviewUpdateInterval, cancellationToken).ConfigureAwait(false);
+                PluginLogger.Log($"GestureProcessingPlugin: PreviewLoop updating frame {frame.Width}x{frame.Height}");
             }
-            catch (OperationCanceledException)
-            {
-                break;
+            _previewWindow.UpdateFrame(frame);
+                        }
+                        catch (Exception ex)
+                        {
+                            PluginLogger.Log($"GestureProcessingPlugin: failed to update preview window: {ex.Message}");
+                        }
+                    }, DispatcherPriority.Background);
+                }
             }
         }
     }
@@ -353,11 +346,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
 
     private void DrawLandmarksOverlay(PluginFrameContext context)
     {
-        GestureLandmarkSnapshot snapshot;
-        lock (_landmarkSync)
-        {
-            snapshot = _latestLandmarks;
-        }
         var snapshot = Volatile.Read(ref _latestLandmarks);
 
         if (!snapshot.HasLandmarks)
@@ -377,11 +365,50 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         var frameWidth = context.Frame.Width;
         var frameHeight = context.Frame.Height;
 
+        Span<OverlayPoint> stackPoints = stackalloc OverlayPoint[21];
+
         foreach (var set in snapshot.Sets)
         {
+            var pointsCount = set.Points.Count;
+            if (pointsCount == 0)
+            {
+                continue;
+            }
+
+            if (pointsCount <= 21)
+            {
+                for (var i = 0; i < pointsCount; i++)
+                {
+                    stackPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
+                }
+
+                foreach (var (a, b) in HandConnections)
+                {
+                    if (a >= pointsCount || b >= pointsCount)
+                    {
+                        continue;
+                    }
+
+                    context.Scene.Add(new OverlayLine(stackPoints[a], stackPoints[b], ConnectionStroke));
+                }
+
+                for (var i = 0; i < pointsCount; i++)
+                {
+                    context.Scene.Add(new OverlayCircle(stackPoints[i], 4f, LandmarkStroke, LandmarkFill));
+                }
+
+                continue;
+            }
+
+            var heapPoints = new OverlayPoint[pointsCount];
+            for (var i = 0; i < pointsCount; i++)
+            {
+                heapPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
+            }
+
             foreach (var (a, b) in HandConnections)
             {
-                if (a >= set.Points.Count || b >= set.Points.Count)
+                if (a >= pointsCount || b >= pointsCount)
                 {
                     continue;
                 }
@@ -389,13 +416,9 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                 context.Scene.Add(new OverlayLine(heapPoints[a], heapPoints[b], ConnectionStroke));
             }
 
-            foreach (var point in set.Points)
+            for (var i = 0; i < pointsCount; i++)
             {
-                context.Scene.Add(new OverlayCircle(
-                    ToOverlayPoint(point, frameWidth, frameHeight),
-                    4f,
-                    LandmarkStroke,
-                    LandmarkFill));
+                context.Scene.Add(new OverlayCircle(heapPoints[i], 4f, LandmarkStroke, LandmarkFill));
             }
         }
     }
@@ -405,6 +428,16 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         var x = Math.Clamp(point.X, 0f, 1f) * frameWidth;
         var y = Math.Clamp(point.Y, 0f, 1f) * frameHeight;
         return OverlayPoint.FromPixels(x, y);
+    }
+
+    private static double TicksToMs(long ticks)
+    {
+        if (ticks <= 0)
+        {
+            return 0d;
+        }
+
+        return (ticks * 1000d) / Stopwatch.Frequency;
     }
 
 }

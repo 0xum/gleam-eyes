@@ -36,6 +36,10 @@ internal static class MediaPipeFramePreprocessor
                 timestampNs,
                 resizedData);
         }
+
+        if (timestampNs % 120 == 0)
+        {
+             PluginLogger.Log($"MediaPipeFramePreprocessor: Processing format {pixelFormat}, size {frame.Width}x{frame.Height}");
         }
 
         if (string.Equals(pixelFormat, "BGRA32", StringComparison.OrdinalIgnoreCase) ||
@@ -74,14 +78,6 @@ internal static class MediaPipeFramePreprocessor
 
     private static byte[] ConvertBgraLikeToRgb24(byte[] source, int width, int height)
     {
-        var sourceStride = width * 4;
-        var expectedSourceLength = sourceStride * height;
-        if (source.Length < expectedSourceLength)
-        {
-            throw new InvalidOperationException(
-                $"Invalid frame: expected at least {expectedSourceLength} bytes for 32bpp format, got {source.Length}.");
-        }
-
         var destination = new byte[width * height * 3];
 
         var srcHandle = GCHandle.Alloc(source, GCHandleType.Pinned);

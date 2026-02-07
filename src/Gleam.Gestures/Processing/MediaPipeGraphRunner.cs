@@ -15,6 +15,8 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private const string InputStreamName = "image";
     private const string OutputStreamName = "multi_hand_landmarks";
     private const int NoDetectionLogInterval = 120;
+    private const int MaxInFlightFrames = 2;
+    private const int MaxNoResultFramesBeforeResync = 6;
     private static readonly string[] RequiredModelRelativePaths =
     [
         "mediapipe/modules/hand_landmark/hand_landmark_full.tflite",
@@ -58,6 +60,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private long _emptyFrames;
     private long _submittedFrames;
     private long _receivedResults;
+    private long _framesSinceLastResult;
     private string? _previousCurrentDirectory;
 
     public bool IsRunning => _isRunning;
@@ -88,10 +91,12 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         _graph = graph;
         _poller = poller;
         _pollerQueueSizeMethod = poller.GetType().GetMethod("QueueSize", BindingFlags.Public | BindingFlags.Instance);
+        _hasQueueSizeMethod = _pollerQueueSizeMethod != null;
         _processedFrames = 0;
         _emptyFrames = 0;
         _submittedFrames = 0;
         _receivedResults = 0;
+        _framesSinceLastResult = 0;
         _isRunning = true;
         PluginLogger.Log($"GestureProcessingPlugin: QueueSize method available: {_hasQueueSizeMethod}");
         PluginLogger.Log("GestureProcessingPlugin: MediaPipe graph started.");
@@ -106,9 +111,17 @@ internal sealed class MediaPipeGraphRunner : IDisposable
 
         _processedFrames++;
 
-        // Step 1: Submit the frame. Only skip if too many are in-flight.
+        // Step 1: Submit the frame.
+        // O stream "multi_hand_landmarks" pode ficar sem emitir pacotes por alguns ciclos.
+        // Se limitarmos estritamente por in-flight usando submitted/received, podemos entrar
+        // em starvation quando o capture inicia sem mão visível. Fazemos um resync leve para
+        // manter fluidez e recuperar detecção quando a mão entra depois.
         var inFlight = _submittedFrames - _receivedResults;
-        if (inFlight <= 1)
+        var forceSubmitDuringStartupStall =
+            _framesSinceLastResult >= MaxNoResultFramesBeforeResync &&
+            (_framesSinceLastResult % 2 == 0);
+
+        if (inFlight < MaxInFlightFrames || forceSubmitDuringStartupStall)
         {
             try
             {
@@ -181,6 +194,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         {
             try
             {
+                _framesSinceLastResult = 0;
                 return CreateSnapshot(latestResult);
             }
             finally
@@ -188,6 +202,8 @@ internal sealed class MediaPipeGraphRunner : IDisposable
                 latestResult.Dispose();
             }
         }
+
+        _framesSinceLastResult++;
 
         return GestureLandmarkSnapshot.Empty;
     }
@@ -478,11 +494,11 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             $"GestureProcessingPlugin: MediaPipe processed={_processedFrames}, no_landmarks={_emptyFrames}. If this stays high, verify .tflite assets and graph path.");
     }
 
-    private bool HasPendingOutput()
+    private int GetQueueSize()
     {
         if (_poller == null || _pollerQueueSizeMethod == null)
         {
-            return true;
+            return 0;
         }
 
         try
@@ -490,14 +506,14 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             var queueSizeRaw = _pollerQueueSizeMethod.Invoke(_poller, null);
             return queueSizeRaw switch
             {
-                int size => size > 0,
-                long size => size > 0,
-                _ => true
+                int size => size,
+                long size => (int)size,
+                _ => 0
             };
         }
         catch
         {
-            return true;
+            return 0;
         }
     }
 }
