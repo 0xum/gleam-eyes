@@ -39,6 +39,10 @@ public sealed class OverlayBitmapComposer
             {
                 Marshal.Copy(frame.Data, 0, ptr, frame.Data.Length);
             }
+            else if (string.Equals(frame.PixelFormat, "RGB24", StringComparison.OrdinalIgnoreCase))
+            {
+                ConvertRgb24ToBgra32IntoBuffer(ptr, buffer.RowBytes, frame.Data, frame.Width, frame.Height);
+            }
             else
             {
                 using var decoded = SKBitmap.Decode(frame.Data);
@@ -89,5 +93,47 @@ public sealed class OverlayBitmapComposer
         _bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96),
             PixelFormat.Bgra8888, AlphaFormat.Premul);
         _skBitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+    }
+
+    private static unsafe void ConvertRgb24ToBgra32IntoBuffer(
+        IntPtr destination,
+        int destinationRowBytes,
+        byte[] source,
+        int width,
+        int height)
+    {
+        var expectedLength = width * height * 3;
+        if (source.Length < expectedLength)
+        {
+            throw new InvalidOperationException(
+                $"Invalid RGB24 frame: expected at least {expectedLength} bytes, got {source.Length}.");
+        }
+
+        var srcIndex = 0;
+        var rowPixelBytes = width * 4;
+
+        for (var y = 0; y < height; y++)
+        {
+            var rowBase = (byte*)destination + (y * destinationRowBytes);
+            var rowPtr = rowBase;
+
+            for (var x = 0; x < width; x++)
+            {
+                var r = source[srcIndex];
+                var g = source[srcIndex + 1];
+                var b = source[srcIndex + 2];
+
+                rowPtr[0] = b;
+                rowPtr[1] = g;
+                rowPtr[2] = r;
+                rowPtr[3] = byte.MaxValue;
+
+                srcIndex += 3;
+                rowPtr += 4;
+            }
+
+            // keep compiler aware we consumed exactly one row in destination
+            _ = rowPixelBytes;
+        }
     }
 }

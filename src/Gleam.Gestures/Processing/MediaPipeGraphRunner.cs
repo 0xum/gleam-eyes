@@ -52,9 +52,12 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private CalculatorGraph? _graph;
     private OutputStreamPoller<List<NormalizedLandmarkList>>? _poller;
     private MethodInfo? _pollerQueueSizeMethod;
+    private bool _hasQueueSizeMethod;
     private bool _isRunning;
     private long _processedFrames;
     private long _emptyFrames;
+    private long _submittedFrames;
+    private long _receivedResults;
     private string? _previousCurrentDirectory;
 
     public bool IsRunning => _isRunning;
@@ -87,7 +90,10 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         _pollerQueueSizeMethod = poller.GetType().GetMethod("QueueSize", BindingFlags.Public | BindingFlags.Instance);
         _processedFrames = 0;
         _emptyFrames = 0;
+        _submittedFrames = 0;
+        _receivedResults = 0;
         _isRunning = true;
+        PluginLogger.Log($"GestureProcessingPlugin: QueueSize method available: {_hasQueueSizeMethod}");
         PluginLogger.Log("GestureProcessingPlugin: MediaPipe graph started.");
     }
 
@@ -100,48 +106,109 @@ internal sealed class MediaPipeGraphRunner : IDisposable
 
         _processedFrames++;
 
-        using var imageFrame = CreateImageFrame(frame);
-        using var timestamp = new Timestamp(frame.TimestampNs / 1000);
-        using var packet = new ImageFramePacket(imageFrame, timestamp);
-        _graph.AddPacketToInputStream(InputStreamName, packet).AssertOk();
-
-        if (!HasPendingOutput())
+        // Step 1: Submit the frame. Only skip if too many are in-flight.
+        var inFlight = _submittedFrames - _receivedResults;
+        if (inFlight <= 1)
         {
-            _emptyFrames++;
-            MaybeLogNoDetections();
-            return GestureLandmarkSnapshot.Empty;
-        }
-
-        var outputPacket = new NormalizedLandmarkListVectorPacket();
-        if (!_poller.Next(outputPacket))
-        {
-            outputPacket.Dispose();
-            _emptyFrames++;
-            MaybeLogNoDetections();
-            return GestureLandmarkSnapshot.Empty;
-        }
-
-        try
-        {
-            var sets = outputPacket.Get()
-                .Select(landmarkList => new GestureLandmarkSet(
-                    landmarkList.Landmark
-                        .Select(landmark => new GestureLandmarkPoint(landmark.X, landmark.Y, landmark.Z))
-                        .ToArray()))
-                .ToArray();
-
-            if (sets.Length == 0)
+            try
             {
-                _emptyFrames++;
-                MaybeLogNoDetections();
+                using var imageFrame = CreateImageFrame(frame);
+                using var timestamp = new Timestamp(frame.TimestampNs / 1000);
+                using var packet = new ImageFramePacket(imageFrame, timestamp);
+                _graph.AddPacketToInputStream(InputStreamName, packet).AssertOk();
+                _submittedFrames++;
             }
-
-            return new GestureLandmarkSnapshot(timestamp.Microseconds, sets);
+            catch (Exception ex)
+            {
+                PluginLogger.Log($"MediaPipeGraphRunner: Error submitting frame: {ex.Message}");
+            }
         }
-        finally
+        else if (_processedFrames % 60 == 0)
         {
-            outputPacket.Dispose();
+            PluginLogger.Log($"MediaPipeGraphRunner: Skipping frame, inFlight={inFlight}");
         }
+
+        // Step 2: Collect results.
+        // When QueueSize reflection is available, we know exactly how many packets
+        // are ready and can drain them without blocking.
+        // When QueueSize is NOT available, _poller.Next() would block indefinitely
+        // waiting for a result. In that case we call Next() only when we are certain
+        // a result must be pending (submittedFrames > receivedResults) and we limit
+        // ourselves to exactly ONE call so we never block for more than one inference.
+        NormalizedLandmarkListVectorPacket? latestResult = null;
+
+        if (_hasQueueSizeMethod)
+        {
+            // Safe: QueueSize tells us exactly how many are ready (non-blocking).
+            var drainCount = GetQueueSize();
+            for (var i = 0; i < drainCount; i++)
+            {
+                var pkt = new NormalizedLandmarkListVectorPacket();
+                if (_poller.Next(pkt))
+                {
+                    latestResult?.Dispose();
+                    latestResult = pkt;
+                    _receivedResults++;
+                }
+                else
+                {
+                    pkt.Dispose();
+                    break;
+                }
+            }
+        }
+        else
+        {
+            // Fallback: no QueueSize. Next() blocks until a packet arrives.
+            // Only call it if we know at least one result is expected.
+            if (_submittedFrames > _receivedResults)
+            {
+                var pkt = new NormalizedLandmarkListVectorPacket();
+                if (_poller.Next(pkt))
+                {
+                    latestResult = pkt;
+                    _receivedResults++;
+                }
+                else
+                {
+                    pkt.Dispose();
+                }
+            }
+        }
+
+        // Step 3: Return the latest result if we got one.
+        if (latestResult != null)
+        {
+            try
+            {
+                return CreateSnapshot(latestResult);
+            }
+            finally
+            {
+                latestResult.Dispose();
+            }
+        }
+
+        return GestureLandmarkSnapshot.Empty;
+    }
+
+    private GestureLandmarkSnapshot CreateSnapshot(NormalizedLandmarkListVectorPacket packet)
+    {
+        var resultTimestampUs = packet.Timestamp().Microseconds;
+        var sets = packet.Get()
+            .Select(landmarkList => new GestureLandmarkSet(
+                landmarkList.Landmark
+                    .Select(landmark => new GestureLandmarkPoint(landmark.X, landmark.Y, landmark.Z))
+                    .ToArray()))
+            .ToArray();
+
+        if (sets.Length == 0)
+        {
+            _emptyFrames++;
+            MaybeLogNoDetections();
+        }
+
+        return new GestureLandmarkSnapshot(resultTimestampUs, sets);
     }
 
     public void Stop()

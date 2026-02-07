@@ -8,6 +8,10 @@ namespace Gleam.Gestures.Processing;
 
 internal static class MediaPipeFramePreprocessor
 {
+    private const bool DownscaleForInference = true;
+    private const int InferenceMaxWidth = 640;
+    private const int InferenceMaxHeight = 480;
+
     public static PreparedFrame? Prepare(PluginFrameContext context)
     {
         return Prepare(context.Frame, context.Frame.TimestampNs);
@@ -24,12 +28,14 @@ internal static class MediaPipeFramePreprocessor
 
         if (string.Equals(pixelFormat, "RGB24", StringComparison.OrdinalIgnoreCase))
         {
+            var (resizedWidth, resizedHeight, resizedData) = MaybeResizeRgb24(frame.Data, frame.Width, frame.Height);
             return new PreparedFrame(
-                frame.Width,
-                frame.Height,
+                resizedWidth,
+                resizedHeight,
                 "RGB24",
                 timestampNs,
-                frame.Data);
+                resizedData);
+        }
         }
 
         if (string.Equals(pixelFormat, "BGRA32", StringComparison.OrdinalIgnoreCase) ||
@@ -37,22 +43,24 @@ internal static class MediaPipeFramePreprocessor
             string.Equals(pixelFormat, "RGB32", StringComparison.OrdinalIgnoreCase))
         {
             var converted = ConvertBgraLikeToRgb24(frame.Data, frame.Width, frame.Height);
+            var (resizedWidth, resizedHeight, resizedData) = MaybeResizeRgb24(converted, frame.Width, frame.Height);
             return new PreparedFrame(
-                frame.Width,
-                frame.Height,
+                resizedWidth,
+                resizedHeight,
                 "RGB24",
                 timestampNs,
-                converted);
+                resizedData);
         }
 
         if (TryDecodeEncodedToRgb24(frame.Data, out var decodedWidth, out var decodedHeight, out var decodedRgb))
         {
+            var (resizedWidth, resizedHeight, resizedData) = MaybeResizeRgb24(decodedRgb, decodedWidth, decodedHeight);
             return new PreparedFrame(
-                decodedWidth,
-                decodedHeight,
+                resizedWidth,
+                resizedHeight,
                 "RGB24",
                 timestampNs,
-                decodedRgb);
+                resizedData);
         }
 
         if (timestampNs % 300 == 0)
@@ -75,22 +83,31 @@ internal static class MediaPipeFramePreprocessor
         }
 
         var destination = new byte[width * height * 3];
-        for (var y = 0; y < height; y++)
-        {
-            var sourceRowOffset = y * sourceStride;
-            var destinationRowOffset = y * width * 3;
-            for (var x = 0; x < width; x++)
-            {
-                var sourceIndex = sourceRowOffset + (x * 4);
-                var destinationIndex = destinationRowOffset + (x * 3);
-                var b = source[sourceIndex];
-                var g = source[sourceIndex + 1];
-                var r = source[sourceIndex + 2];
 
-                destination[destinationIndex] = r;
-                destination[destinationIndex + 1] = g;
-                destination[destinationIndex + 2] = b;
+        var srcHandle = GCHandle.Alloc(source, GCHandleType.Pinned);
+        var dstHandle = GCHandle.Alloc(destination, GCHandleType.Pinned);
+        try
+        {
+            unsafe
+            {
+                byte* srcPtr = (byte*)srcHandle.AddrOfPinnedObject();
+                byte* dstPtr = (byte*)dstHandle.AddrOfPinnedObject();
+
+                var pixelCount = width * height;
+                for (var i = 0; i < pixelCount; i++)
+                {
+                    var srcIdx = i << 2;
+                    var dstIdx = i * 3;
+                    dstPtr[dstIdx] = srcPtr[srcIdx + 2];     // R
+                    dstPtr[dstIdx + 1] = srcPtr[srcIdx + 1]; // G
+                    dstPtr[dstIdx + 2] = srcPtr[srcIdx];     // B
+                }
             }
+        }
+        finally
+        {
+            srcHandle.Free();
+            dstHandle.Free();
         }
 
         return destination;
@@ -135,5 +152,68 @@ internal static class MediaPipeFramePreprocessor
         {
             return false;
         }
+    }
+
+    private static (int Width, int Height, byte[] Data) MaybeResizeRgb24(byte[] source, int sourceWidth, int sourceHeight)
+    {
+        if (!DownscaleForInference || sourceWidth <= 0 || sourceHeight <= 0)
+        {
+            return (sourceWidth, sourceHeight, source);
+        }
+
+        var widthScale = InferenceMaxWidth / (float)sourceWidth;
+        var heightScale = InferenceMaxHeight / (float)sourceHeight;
+        var scale = Math.Min(1f, Math.Min(widthScale, heightScale));
+
+        if (scale >= 1f)
+        {
+            return (sourceWidth, sourceHeight, source);
+        }
+
+        var targetWidth = Math.Max(1, (int)Math.Round(sourceWidth * scale));
+        var targetHeight = Math.Max(1, (int)Math.Round(sourceHeight * scale));
+        return (targetWidth, targetHeight, ResizeRgb24Nearest(source, sourceWidth, sourceHeight, targetWidth, targetHeight));
+    }
+
+    private static byte[] ResizeRgb24Nearest(byte[] source, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
+    {
+        var destination = new byte[targetWidth * targetHeight * 3];
+
+        var srcHandle = GCHandle.Alloc(source, GCHandleType.Pinned);
+        var dstHandle = GCHandle.Alloc(destination, GCHandleType.Pinned);
+
+        try
+        {
+            unsafe
+            {
+                byte* srcPtr = (byte*)srcHandle.AddrOfPinnedObject();
+                byte* dstPtr = (byte*)dstHandle.AddrOfPinnedObject();
+
+                for (var y = 0; y < targetHeight; y++)
+                {
+                    var sourceY = y * sourceHeight / targetHeight;
+                    var dstRowOffset = y * targetWidth * 3;
+                    var srcRowOffset = sourceY * sourceWidth * 3;
+
+                    for (var x = 0; x < targetWidth; x++)
+                    {
+                        var sourceX = x * sourceWidth / targetWidth;
+                        var srcIdx = srcRowOffset + sourceX * 3;
+                        var dstIdx = dstRowOffset + x * 3;
+
+                        dstPtr[dstIdx] = srcPtr[srcIdx];
+                        dstPtr[dstIdx + 1] = srcPtr[srcIdx + 1];
+                        dstPtr[dstIdx + 2] = srcPtr[srcIdx + 2];
+                    }
+                }
+            }
+        }
+        finally
+        {
+            srcHandle.Free();
+            dstHandle.Free();
+        }
+
+        return destination;
     }
 }

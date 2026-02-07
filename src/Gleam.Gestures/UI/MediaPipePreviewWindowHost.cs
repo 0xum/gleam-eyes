@@ -102,17 +102,27 @@ internal sealed class MediaPipePreviewWindowHost
             return;
         }
 
-        ConvertRgb24ToBgra32(frame.Data, frame.Width, frame.Height, _scratchBgra);
-        using (var locked = _bitmap.Lock())
-        {
-            var sourceStride = frame.Width * 4;
-            for (var y = 0; y < frame.Height; y++)
+            ConvertRgb24ToBgra32(frame.Data, frame.Width, frame.Height, _scratchBgra);
+            using (var locked = _bitmap.Lock())
             {
-                var sourceOffset = y * sourceStride;
-                var destinationPtr = IntPtr.Add(locked.Address, y * locked.RowBytes);
-                Marshal.Copy(_scratchBgra, sourceOffset, destinationPtr, sourceStride);
+                unsafe
+                {
+                    var dstStride = locked.RowBytes;
+                    var srcStride = frame.Width * 4;
+                    var dstAddr = (byte*)locked.Address;
+                    fixed (byte* srcAddr = _scratchBgra)
+                    {
+                        for (var y = 0; y < frame.Height; y++)
+                        {
+                            Buffer.MemoryCopy(
+                                srcAddr + (y * srcStride),
+                                dstAddr + (y * dstStride),
+                                (ulong)dstStride,
+                                (ulong)srcStride);
+                        }
+                    }
+                }
             }
-        }
 
         if (!ReferenceEquals(_image.Source, _bitmap))
         {

@@ -46,8 +46,18 @@ public partial class MainWindowViewModel : ObservableObject
     private MethodInfo? _gestureOpenDebugMethod;
     private PropertyInfo? _gestureCanOpenDebugProperty;
     private PropertyInfo? _gestureToolbarLabelProperty;
+    private PropertyInfo? _gestureRuntimePerfProperty;
     private EventInfo? _gestureToolbarStateChangedEvent;
     private Delegate? _gestureToolbarStateChangedHandler;
+    private WriteableBitmap? _latestComposedBitmap;
+    private long _previewVersion;
+    private long _presentedPreviewVersion;
+    private int _previewUpdateScheduled;
+    private long _processElapsedTicksAcc;
+    private long _composeElapsedTicksAcc;
+    private long _processSampleCount;
+    private long _previewEnqueueTick;
+    private long _previewQueueDelayTicks;
 
     [ObservableProperty]
     private Bitmap? previewImage;
@@ -66,6 +76,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string pluginTickText = "Ticks: 0";
+
+    [ObservableProperty]
+    private string performanceDebugText = "Perf: -";
 
     [ObservableProperty]
     private bool isGridEnabled = true;
@@ -157,6 +170,7 @@ public partial class MainWindowViewModel : ObservableObject
             _gestureOpenDebugMethod = null;
             _gestureCanOpenDebugProperty = null;
             _gestureToolbarLabelProperty = null;
+            _gestureRuntimePerfProperty = null;
             IsGestureDebugButtonVisible = false;
             GestureDebugButtonLabel = "Open Gesture Debug";
             return;
@@ -169,6 +183,7 @@ public partial class MainWindowViewModel : ObservableObject
         _gestureOpenDebugMethod = pluginType.GetMethod("OpenDebugWindow", BindingFlags.Public | BindingFlags.Instance, Type.EmptyTypes);
         _gestureCanOpenDebugProperty = pluginType.GetProperty("CanOpenDebugWindow", BindingFlags.Public | BindingFlags.Instance);
         _gestureToolbarLabelProperty = pluginType.GetProperty("ToolbarActionLabel", BindingFlags.Public | BindingFlags.Instance);
+        _gestureRuntimePerfProperty = pluginType.GetProperty("RuntimePerfLabel", BindingFlags.Public | BindingFlags.Instance);
         _gestureToolbarStateChangedEvent = pluginType.GetEvent("ToolbarStateChanged", BindingFlags.Public | BindingFlags.Instance);
 
         SubscribeGestureToolbarEvent();
@@ -431,7 +446,10 @@ public partial class MainWindowViewModel : ObservableObject
 
                 if (bitmap != null && IsRunning)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() => UpdatePreview(bitmap));
+                    _latestComposedBitmap = bitmap;
+                    Interlocked.Exchange(ref _previewEnqueueTick, Stopwatch.GetTimestamp());
+                    Interlocked.Increment(ref _previewVersion);
+                    QueuePreviewUpdate();
                 }
 
                 UpdateFps();
@@ -448,6 +466,41 @@ public partial class MainWindowViewModel : ObservableObject
                 StatusText = $"Capture error: {ex.Message}";
             });
         }
+    }
+
+    private void QueuePreviewUpdate()
+    {
+        if (Interlocked.Exchange(ref _previewUpdateScheduled, 1) == 1)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var latest = _latestComposedBitmap;
+                if (latest != null && IsRunning)
+                {
+                    UpdatePreview(latest);
+                    var enqueueTick = Interlocked.Read(ref _previewEnqueueTick);
+                    if (enqueueTick > 0)
+                    {
+                        Interlocked.Exchange(ref _previewQueueDelayTicks, Stopwatch.GetTimestamp() - enqueueTick);
+                    }
+                    Interlocked.Exchange(ref _presentedPreviewVersion, Interlocked.Read(ref _previewVersion));
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _previewUpdateScheduled, 0);
+
+                if (Interlocked.Read(ref _previewVersion) != Interlocked.Read(ref _presentedPreviewVersion) && IsRunning)
+                {
+                    QueuePreviewUpdate();
+                }
+            }
+        }, DispatcherPriority.Background);
     }
 
     private void UpdatePreview(WriteableBitmap bitmap)
@@ -503,6 +556,15 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _pluginTickCounter++;
         var text = $"Ticks: {_pluginTickCounter}";
+        var gesturePerf = _gesturePluginInstance != null && _gestureRuntimePerfProperty != null
+            ? _gestureRuntimePerfProperty.GetValue(_gesturePluginInstance) as string
+            : null;
+
+        var perfText = $"Perf: plugin={processMs:F1}ms compose={composeMs:F1}ms previewQ={previewQueueMs:F1}ms";
+        if (!string.IsNullOrWhiteSpace(gesturePerf))
+        {
+            perfText = $"{perfText} | {gesturePerf}";
+        }
 
         if (Dispatcher.UIThread.CheckAccess())
         {

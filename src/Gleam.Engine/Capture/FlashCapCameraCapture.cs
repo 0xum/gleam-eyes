@@ -128,10 +128,19 @@ public sealed class FlashCapCameraCapture : ICameraCapture
             .Where(c => c.PixelFormat == PixelFormats.ARGB32
                         || c.PixelFormat == PixelFormats.RGB32
                         || c.PixelFormat == PixelFormats.RGB24)
+            .OrderBy(c => c.Width * c.Height)
             .ToList();
 
-        var target = descriptor.Characteristics
+        var target = preferredFormats
             .FirstOrDefault(c => c.Width == 640 && c.Height == 480);
+
+        if (target != null)
+        {
+            return target;
+        }
+
+        target = preferredFormats
+            .FirstOrDefault(c => c.Width <= 640 && c.Height <= 480);
 
         if (target != null)
         {

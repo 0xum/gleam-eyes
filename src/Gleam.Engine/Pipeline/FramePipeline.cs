@@ -10,11 +10,11 @@ public sealed class FramePipeline
 
     public FramePipeline()
     {
-        var options = new BoundedChannelOptions(2)
+        var options = new BoundedChannelOptions(1)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
-            SingleWriter = false,
-            SingleReader = false
+            SingleWriter = true,
+            SingleReader = true
         };
 
         _channel = Channel.CreateBounded<RawFrame>(options);

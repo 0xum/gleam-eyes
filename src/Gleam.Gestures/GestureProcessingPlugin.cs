@@ -1,5 +1,6 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using Avalonia.Threading;
 using Gleam.Engine.Frames;
 using Gleam.Engine.Overlays;
@@ -14,6 +15,9 @@ namespace Gleam.Gestures;
 public class GestureProcessingPlugin : IFrameProcessingPlugin
 {
     private static readonly TimeSpan PreviewUpdateInterval = TimeSpan.FromMilliseconds(66);
+    private const int MaxLandmarkAgFrames = 15;
+    private const int EmptySnapshotClearThresholdFrames = 3;
+    private static readonly long PreviewUpdateIntervalTicks = (long)(PreviewUpdateInterval.TotalSeconds * Stopwatch.Frequency);
     private const int RuntimeLogIntervalFrames = 60;
     private static readonly OverlayStroke LandmarkStroke = new(1.5f, new ColorRgba(80, 255, 160, 180));
     private static readonly OverlayStroke ConnectionStroke = new(2.2f, new ColorRgba(255, 180, 80, 210));
@@ -43,7 +47,27 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private RawFrame? _latestRawFrame;
     private GestureLandmarkSnapshot _latestLandmarks = GestureLandmarkSnapshot.Empty;
     private int _landmarkDetectionCount;
+    private int _lastDetectedHands;
+    private int _lastDetectedPoints;
     private bool _mediaPipeFaulted;
+    private long _lastInferenceElapsedTicks;
+    private long _avgInferenceElapsedTicks;
+    private long _lastOverlayAgeUs;
+    private int _framesSinceLastLandmarkUpdate;
+    private int _consecutiveEmptySnapshots;
+
+    public string RuntimePerfLabel
+    {
+        get
+        {
+            var lastMs = TicksToMs(Volatile.Read(ref _lastInferenceElapsedTicks));
+            var avgMs = TicksToMs(Volatile.Read(ref _avgInferenceElapsedTicks));
+            var overlayAgeFrames = Volatile.Read(ref _lastOverlayAgeUs);
+            var hands = Volatile.Read(ref _lastDetectedHands);
+            var points = Volatile.Read(ref _lastDetectedPoints);
+            return $"Infer={lastMs:F1}ms(avg {avgMs:F1}) age={overlayAgeFrames}f prep={_preparedFrameCount} drop={_droppedFrameCount} detFrames={_landmarkDetectionCount} hands={hands} points={points}";
+        }
+    }
 
     public event Action? ToolbarStateChanged;
 
@@ -96,6 +120,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _droppedFrameCount = 0;
         _landmarkDetectionCount = 0;
         _mediaPipeFaulted = false;
+        _nextPreviewRenderTick = 0;
+        _consecutiveEmptySnapshots = 0;
         _isCaptureRunning = true;
         lock (_previewSync)
         {
@@ -106,6 +132,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         {
             _latestLandmarks = GestureLandmarkSnapshot.Empty;
         }
+        Interlocked.Exchange(ref _latestRawFrame, null);
+        Volatile.Write(ref _latestLandmarks, GestureLandmarkSnapshot.Empty);
 
         try
         {
@@ -226,15 +254,57 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                 {
                     try
                     {
+                        var inferenceStart = Stopwatch.GetTimestamp();
                         var snapshot = _graphRunner.Process(frame);
-                        lock (_landmarkSync)
+                        var inferenceElapsed = Stopwatch.GetTimestamp() - inferenceStart;
+
+                        Interlocked.Exchange(ref _lastInferenceElapsedTicks, inferenceElapsed);
+                        var previousAvg = Volatile.Read(ref _avgInferenceElapsedTicks);
+                        var nextAvg = previousAvg == 0
+                            ? inferenceElapsed
+                            : ((previousAvg * 7) + inferenceElapsed) / 8;
+                        Interlocked.Exchange(ref _avgInferenceElapsedTicks, nextAvg);
+
+                        if (_frameCount % 60 == 0)
                         {
-                            _latestLandmarks = snapshot;
+                            var lastMs = TicksToMs(inferenceElapsed);
+                            PluginLogger.Log($"[Perf] MediaPipe Process: {lastMs:F2}ms");
                         }
 
-                        if (snapshot.HasLandmarks)
+                        // MediaPipeGraphRunner retorna exatamente GestureLandmarkSnapshot.Empty
+                        // quando não há pacote novo disponível neste ciclo.
+                        // Nessa situação mantemos o último estado para evitar flicker.
+                        if (!ReferenceEquals(snapshot, GestureLandmarkSnapshot.Empty))
                         {
-                            _landmarkDetectionCount++;
+                            if (snapshot.HasLandmarks)
+                            {
+                                Volatile.Write(ref _latestLandmarks, snapshot);
+                                Volatile.Write(ref _framesSinceLastLandmarkUpdate, 0);
+                                Volatile.Write(ref _consecutiveEmptySnapshots, 0);
+                                _landmarkDetectionCount++;
+
+                                var hands = snapshot.Sets.Count;
+                                var points = 0;
+                                for (var i = 0; i < hands; i++)
+                                {
+                                    points += snapshot.Sets[i].Points.Count;
+                                }
+
+                                Volatile.Write(ref _lastDetectedHands, hands);
+                                Volatile.Write(ref _lastDetectedPoints, points);
+                            }
+                            else
+                            {
+                                // Resultado explícito sem landmarks: só limpamos após alguns
+                                // vazios consecutivos para reduzir piscadas por perdas pontuais.
+                                var emptyStreak = Interlocked.Increment(ref _consecutiveEmptySnapshots);
+                                if (emptyStreak >= EmptySnapshotClearThresholdFrames)
+                                {
+                                    Volatile.Write(ref _latestLandmarks, GestureLandmarkSnapshot.Empty);
+                                    Volatile.Write(ref _lastDetectedHands, 0);
+                                    Volatile.Write(ref _lastDetectedPoints, 0);
+                                }
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -288,8 +358,18 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         {
             snapshot = _latestLandmarks;
         }
+        var snapshot = Volatile.Read(ref _latestLandmarks);
 
         if (!snapshot.HasLandmarks)
+        {
+            return;
+        }
+
+        var age = Volatile.Read(ref _framesSinceLastLandmarkUpdate);
+        Interlocked.Increment(ref _framesSinceLastLandmarkUpdate);
+        Volatile.Write(ref _lastOverlayAgeUs, age);
+
+        if (age > MaxLandmarkAgFrames)
         {
             return;
         }
@@ -306,12 +386,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     continue;
                 }
 
-                var start = set.Points[a];
-                var end = set.Points[b];
-                context.Scene.Add(new OverlayLine(
-                    ToOverlayPoint(start, frameWidth, frameHeight),
-                    ToOverlayPoint(end, frameWidth, frameHeight),
-                    ConnectionStroke));
+                context.Scene.Add(new OverlayLine(heapPoints[a], heapPoints[b], ConnectionStroke));
             }
 
             foreach (var point in set.Points)
