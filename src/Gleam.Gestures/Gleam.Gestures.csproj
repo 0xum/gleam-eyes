@@ -11,6 +11,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Gleam.Engine\Gleam.Engine.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Mediapipe.Net" Version="0.9.2" />
       <PackageReference Include="Mediapipe.Net.Runtime.CPU" Version="0.9.1" />
       <PackageReference Include="Mediapipe.Net.Runtime.GPU" Version="1.0.0-alpha2" />
