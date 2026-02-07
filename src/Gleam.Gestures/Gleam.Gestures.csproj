@@ -20,7 +20,80 @@
       <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
       <PackageReference Include="Mediapipe.Net" Version="0.9.2" />
       <PackageReference Include="Mediapipe.Net.Runtime.CPU" Version="0.9.1" />
-      <PackageReference Include="Mediapipe.Net.Runtime.GPU" Version="1.0.0-alpha2" />
     </ItemGroup>
+
+    <Target Name="CopyMediaPipeNativeRuntime" AfterTargets="Build">
+      <PropertyGroup>
+        <MediaPipeCpuRuntimeRoot>$(NuGetPackageRoot)mediapipe.net.runtime.cpu/0.9.1/runtimes</MediaPipeCpuRuntimeRoot>
+        <AppBaseOutputPath>$(OutputPath)..\</AppBaseOutputPath>
+        <AppRuntimeNativePath>$(AppBaseOutputPath)runtimes/linux-x64/native/</AppRuntimeNativePath>
+        <PluginMediapipeLibPath>$(OutputPath)0.9.2/lib/net6.0/</PluginMediapipeLibPath>
+      </PropertyGroup>
+
+      <MakeDir Directories="$(AppRuntimeNativePath)" />
+      <MakeDir Directories="$(PluginMediapipeLibPath)" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(OutputPath)libmediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(OutputPath)mediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(AppBaseOutputPath)libmediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(AppBaseOutputPath)mediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(AppRuntimeNativePath)libmediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(AppRuntimeNativePath)mediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(PluginMediapipeLibPath)libmediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so"
+        DestinationFiles="$(PluginMediapipeLibPath)mediapipe_c.so"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/linux-x64/native/libmediapipe_c.so')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/win-x64/native/mediapipe_c.dll"
+        DestinationFiles="$(OutputPath)mediapipe_c.dll"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/win-x64/native/mediapipe_c.dll')" />
+
+      <Copy
+        SourceFiles="$(MediaPipeCpuRuntimeRoot)/win-x64/native/mediapipe_c.dll"
+        DestinationFiles="$(AppBaseOutputPath)mediapipe_c.dll"
+        SkipUnchangedFiles="true"
+        Condition="Exists('$(MediaPipeCpuRuntimeRoot)/win-x64/native/mediapipe_c.dll')" />
+
+      <Delete Files="$(OutputPath)Mediapipe.Net.Framework.Protobuf.dll" ContinueOnError="true" />
+    </Target>
 
 </Project>

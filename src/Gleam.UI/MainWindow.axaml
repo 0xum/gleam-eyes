@@ -47,9 +47,12 @@
         </DataTemplate>
 
         <DataTemplate DataType="sidebarTabs:LogsSidebarTabViewModel">
-            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
                 <TextBlock Text="Logs" FontSize="16" FontWeight="SemiBold" />
-                <Border Grid.Row="1" Background="#111318" CornerRadius="6" Padding="8">
+                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Copy Logs" Click="CopyLogsButton_OnClick" />
+                </StackPanel>
+                <Border Grid.Row="2" Background="#111318" CornerRadius="6" Padding="8">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding DataContext.PluginLogs, RelativeSource={RelativeSource AncestorType=Window}}">
                             <ItemsControl.ItemTemplate>
