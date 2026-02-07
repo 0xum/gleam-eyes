@@ -124,10 +124,21 @@ public sealed class FlashCapCameraCapture : ICameraCapture
 
     private static VideoCharacteristics? SelectPreferredCharacteristics(CaptureDeviceDescriptor descriptor)
     {
-        return descriptor.Characteristics.FirstOrDefault(c =>
-                   c.PixelFormat == PixelFormats.ARGB32 ||
-                   c.PixelFormat == PixelFormats.RGB32 ||
-                   c.PixelFormat == PixelFormats.RGB24)
+        var preferredFormats = descriptor.Characteristics
+            .Where(c => c.PixelFormat == PixelFormats.ARGB32
+                        || c.PixelFormat == PixelFormats.RGB32
+                        || c.PixelFormat == PixelFormats.RGB24)
+            .ToList();
+
+        var target = descriptor.Characteristics
+            .FirstOrDefault(c => c.Width == 640 && c.Height == 480);
+
+        if (target != null)
+        {
+            return target;
+        }
+
+        return preferredFormats.FirstOrDefault()
                ?? descriptor.Characteristics.FirstOrDefault();
     }
 

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Gleam.Ui")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f0640ba7ae2a0d3583205db8c4538ff6956f84ac")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8c056c781207c0d0288079b273588bcad6414129")]
 [assembly: System.Reflection.AssemblyProductAttribute("Gleam.Ui")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Gleam.Ui")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

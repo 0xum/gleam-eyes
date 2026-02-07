@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "eFO2yt/+3Ow=",
+  "dgSpecHash": "JRWUrBMDRjo=",
   "success": true,
   "projectFilePath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/Gleam.Ui.csproj",
   "expectedPackageFiles": [
@@ -22,11 +22,16 @@
     "/home/delta/.nuget/packages/communitytoolkit.mvvm/8.4.0/communitytoolkit.mvvm.8.4.0.nupkg.sha512",
     "/home/delta/.nuget/packages/flashcap/1.11.0/flashcap.1.11.0.nupkg.sha512",
     "/home/delta/.nuget/packages/flashcap.core/1.11.0/flashcap.core.1.11.0.nupkg.sha512",
+    "/home/delta/.nuget/packages/google.protobuf/3.19.4/google.protobuf.3.19.4.nupkg.sha512",
     "/home/delta/.nuget/packages/harfbuzzsharp/8.3.1.1/harfbuzzsharp.8.3.1.1.nupkg.sha512",
     "/home/delta/.nuget/packages/harfbuzzsharp.nativeassets.linux/8.3.1.1/harfbuzzsharp.nativeassets.linux.8.3.1.1.nupkg.sha512",
     "/home/delta/.nuget/packages/harfbuzzsharp.nativeassets.macos/8.3.1.1/harfbuzzsharp.nativeassets.macos.8.3.1.1.nupkg.sha512",
     "/home/delta/.nuget/packages/harfbuzzsharp.nativeassets.webassembly/8.3.1.1/harfbuzzsharp.nativeassets.webassembly.8.3.1.1.nupkg.sha512",
     "/home/delta/.nuget/packages/harfbuzzsharp.nativeassets.win32/8.3.1.1/harfbuzzsharp.nativeassets.win32.8.3.1.1.nupkg.sha512",
+    "/home/delta/.nuget/packages/mediapipe.net/0.8.10/mediapipe.net.0.8.10.nupkg.sha512",
+    "/home/delta/.nuget/packages/mediapipe.net.framework.protobuf/0.8.9/mediapipe.net.framework.protobuf.0.8.9.nupkg.sha512",
+    "/home/delta/.nuget/packages/mediapipe.net.runtime.cpu/0.9.1/mediapipe.net.runtime.cpu.0.9.1.nupkg.sha512",
+    "/home/delta/.nuget/packages/mediapipe.net.runtime.gpu/0.9.1/mediapipe.net.runtime.gpu.0.9.1.nupkg.sha512",
     "/home/delta/.nuget/packages/microcom.runtime/0.11.0/microcom.runtime.0.11.0.nupkg.sha512",
     "/home/delta/.nuget/packages/skiasharp/2.88.9/skiasharp.2.88.9.nupkg.sha512",
     "/home/delta/.nuget/packages/skiasharp.nativeassets.linux/2.88.9/skiasharp.nativeassets.linux.2.88.9.nupkg.sha512",
@@ -36,5 +41,30 @@
     "/home/delta/.nuget/packages/system.io.pipelines/8.0.0/system.io.pipelines.8.0.0.nupkg.sha512",
     "/home/delta/.nuget/packages/tmds.dbus.protocol/0.21.2/tmds.dbus.protocol.0.21.2.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "message": "Gleam.Gestures depends on Mediapipe.Net.Runtime.CPU (>= 0.8.10) but Mediapipe.Net.Runtime.CPU 0.8.10 was not found. Mediapipe.Net.Runtime.CPU 0.9.1 was resolved instead.",
+      "projectPath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/Gleam.Ui.csproj",
+      "warningLevel": 1,
+      "filePath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/Gleam.Ui.csproj",
+      "libraryId": "Mediapipe.Net.Runtime.CPU",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    },
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "message": "Gleam.Gestures depends on Mediapipe.Net.Runtime.GPU (>= 0.8.10) but Mediapipe.Net.Runtime.GPU 0.8.10 was not found. Mediapipe.Net.Runtime.GPU 0.9.1 was resolved instead.",
+      "projectPath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/Gleam.Ui.csproj",
+      "warningLevel": 1,
+      "filePath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/Gleam.Ui.csproj",
+      "libraryId": "Mediapipe.Net.Runtime.GPU",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    }
+  ]
 }

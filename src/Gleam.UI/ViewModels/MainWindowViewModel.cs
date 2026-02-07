@@ -33,6 +33,7 @@ public partial class MainWindowViewModel : ObservableObject
     private CancellationTokenSource? _cts;
     private Task? _consumerTask;
     private ICameraCapture? _camera;
+    private readonly ObservableCollection<string> _pluginLogs = new();
 
     [ObservableProperty]
     private Bitmap? previewImage;
@@ -56,14 +57,39 @@ public partial class MainWindowViewModel : ObservableObject
     private bool isAnimatedEnabled;
 
     public ReadOnlyObservableCollection<PluginDescriptor> Plugins { get; }
+    public ReadOnlyObservableCollection<string> PluginLogs { get; }
 
     public MainWindowViewModel()
     {
         Plugins = new ReadOnlyObservableCollection<PluginDescriptor>(_plugins);
+        PluginLogs = new ReadOnlyObservableCollection<string>(_pluginLogs);
         _pluginHandler.LoadPlugins();
         RegisterBuiltIn(new OverlayModulePluginAdapter(_gridModule), _gridModule.Name, "Overlay grid", "1.0.0");
         RegisterBuiltIn(new OverlayModulePluginAdapter(_animatedModule), _animatedModule.Name, "Overlay animado", "1.0.0");
         RefreshPlugins();
+        PluginLogger.Message += OnPluginLog;
+        PluginLogger.Log("[UI] Plugin logger subscribed.");
+    }
+
+    private void OnPluginLog(string message)
+    {
+        void Append()
+        {
+            if (_pluginLogs.Count > 200)
+            {
+                _pluginLogs.RemoveAt(0);
+            }
+            _pluginLogs.Add(message);
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            Append();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(Append);
+        }
     }
 
     private void RegisterBuiltIn(IFrameProcessingPlugin plugin, string name, string description, string version)
@@ -107,6 +133,7 @@ public partial class MainWindowViewModel : ObservableObject
             IsRunning = true;
             _composer.Reset();
             _pluginHandler.OnStartCapture();
+            PluginLogger.Log("[UI] StartAsync iniciado.");
             _cts = new CancellationTokenSource();
             _camera = CameraFactory.CreateDefault();
             _camera.FrameArrived += OnFrameArrived;

@@ -7,6 +7,10 @@
         <DefineConstants>$(DefineConstants);FLASHCAP</DefineConstants>
     </PropertyGroup>
 
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+      <OutputPath>../../build/libs/</OutputPath>
+    </PropertyGroup>
+
     <ItemGroup>
       <PackageReference Include="FlashCap" Version="1.11.0" />
     </ItemGroup>

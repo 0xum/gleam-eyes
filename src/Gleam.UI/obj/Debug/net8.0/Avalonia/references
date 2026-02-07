@@ -26,7 +26,10 @@
 /home/delta/.nuget/packages/flashcap.core/1.11.0/lib/net8.0/FlashCap.Core.dll
 /home/delta/.nuget/packages/flashcap/1.11.0/lib/net8.0/FlashCap.dll
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/obj/Debug/net8.0/ref/Gleam.Engine.dll
+/home/delta/.nuget/packages/google.protobuf/3.19.4/lib/net5.0/Google.Protobuf.dll
 /home/delta/.nuget/packages/harfbuzzsharp/8.3.1.1/lib/net8.0/HarfBuzzSharp.dll
+/home/delta/.nuget/packages/mediapipe.net/0.8.10/lib/net6.0/Mediapipe.Net.dll
+/home/delta/.nuget/packages/mediapipe.net.framework.protobuf/0.8.9/lib/net6.0/Mediapipe.Net.Framework.Protobuf.dll
 /home/delta/.nuget/packages/microcom.runtime/0.11.0/lib/net5.0/MicroCom.Runtime.dll
 /usr/lib/dotnet/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/Microsoft.CSharp.dll
 /usr/lib/dotnet/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/Microsoft.VisualBasic.Core.dll

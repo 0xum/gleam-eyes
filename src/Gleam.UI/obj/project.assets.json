@@ -370,6 +370,19 @@
           }
         }
       },
+      "Google.Protobuf/3.19.4": {
+        "type": "package",
+        "compile": {
+          "lib/net5.0/Google.Protobuf.dll": {
+            "related": ".pdb;.xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/Google.Protobuf.dll": {
+            "related": ".pdb;.xml"
+          }
+        }
+      },
       "HarfBuzzSharp/8.3.1.1": {
         "type": "package",
         "dependencies": {
@@ -490,6 +503,65 @@
           "runtimes/win-x86/native/libHarfBuzzSharp.dll": {
             "assetType": "native",
             "rid": "win-x86"
+          }
+        }
+      },
+      "Mediapipe.Net/0.8.10": {
+        "type": "package",
+        "dependencies": {
+          "Google.Protobuf": "3.19.4",
+          "Mediapipe.Net.Framework.Protobuf": "0.8.9"
+        },
+        "compile": {
+          "lib/net6.0/Mediapipe.Net.dll": {}
+        },
+        "runtime": {
+          "lib/net6.0/Mediapipe.Net.dll": {}
+        }
+      },
+      "Mediapipe.Net.Framework.Protobuf/0.8.9": {
+        "type": "package",
+        "dependencies": {
+          "Google.Protobuf": "3.19.1"
+        },
+        "compile": {
+          "lib/net6.0/Mediapipe.Net.Framework.Protobuf.dll": {}
+        },
+        "runtime": {
+          "lib/net6.0/Mediapipe.Net.Framework.Protobuf.dll": {}
+        }
+      },
+      "Mediapipe.Net.Runtime.CPU/0.9.1": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.1/_._": {}
+        },
+        "runtime": {
+          "lib/netstandard2.1/_._": {}
+        },
+        "runtimeTargets": {
+          "runtimes/linux-x64/native/libmediapipe_c.so": {
+            "assetType": "native",
+            "rid": "linux-x64"
+          },
+          "runtimes/win-x64/native/mediapipe_c.dll": {
+            "assetType": "native",
+            "rid": "win-x64"
+          }
+        }
+      },
+      "Mediapipe.Net.Runtime.GPU/0.9.1": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.1/_._": {}
+        },
+        "runtime": {
+          "lib/netstandard2.1/_._": {}
+        },
+        "runtimeTargets": {
+          "runtimes/linux-x64/native/libmediapipe_c.so": {
+            "assetType": "native",
+            "rid": "linux-x64"
           }
         }
       },
@@ -639,6 +711,23 @@
         },
         "runtime": {
           "bin/placeholder/Gleam.Engine.dll": {}
+        }
+      },
+      "Gleam.Gestures/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "dependencies": {
+          "Gleam.Engine": "1.0.0",
+          "Mediapipe.Net": "0.8.10",
+          "Mediapipe.Net.Runtime.CPU": "0.8.10",
+          "Mediapipe.Net.Runtime.GPU": "0.8.10",
+          "SkiaSharp": "2.88.9"
+        },
+        "compile": {
+          "bin/placeholder/Gleam.Gestures.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Gleam.Gestures.dll": {}
         }
       }
     }
@@ -1209,6 +1298,29 @@
         "lib/netstandard2.1/FlashCap.Core.xml"
       ]
     },
+    "Google.Protobuf/3.19.4": {
+      "sha512": "fd07/ykL4O4FhqrZIELm5lmiyOHfdPg9+o+hWr6tcfRdS7tHXnImg/2wtogLzlW2eEmr0J7j6ZrZvaWOLiJbxQ==",
+      "type": "package",
+      "path": "google.protobuf/3.19.4",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "google.protobuf.3.19.4.nupkg.sha512",
+        "google.protobuf.nuspec",
+        "lib/net45/Google.Protobuf.dll",
+        "lib/net45/Google.Protobuf.pdb",
+        "lib/net45/Google.Protobuf.xml",
+        "lib/net5.0/Google.Protobuf.dll",
+        "lib/net5.0/Google.Protobuf.pdb",
+        "lib/net5.0/Google.Protobuf.xml",
+        "lib/netstandard1.1/Google.Protobuf.dll",
+        "lib/netstandard1.1/Google.Protobuf.pdb",
+        "lib/netstandard1.1/Google.Protobuf.xml",
+        "lib/netstandard2.0/Google.Protobuf.dll",
+        "lib/netstandard2.0/Google.Protobuf.pdb",
+        "lib/netstandard2.0/Google.Protobuf.xml"
+      ]
+    },
     "HarfBuzzSharp/8.3.1.1": {
       "sha512": "tLZN66oe/uiRPTZfrCU4i8ScVGwqHNh5MHrXj0yVf4l7Mz0FhTGnQ71RGySROTmdognAs0JtluHkL41pIabWuQ==",
       "type": "package",
@@ -1365,6 +1477,62 @@
         "runtimes/win-arm64/native/libHarfBuzzSharp.dll",
         "runtimes/win-x64/native/libHarfBuzzSharp.dll",
         "runtimes/win-x86/native/libHarfBuzzSharp.dll"
+      ]
+    },
+    "Mediapipe.Net/0.8.10": {
+      "sha512": "25axT8Ej9KSXEHbQb702EMs5rxO1vwmaOftwFvYEA9ciXqKhF66kddUbslYtgJuSy7YBRvokL9IQCa3uEDgrtw==",
+      "type": "package",
+      "path": "mediapipe.net/0.8.10",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "lib/net6.0/Mediapipe.Net.dll",
+        "mediapipe.net.0.8.10.nupkg.sha512",
+        "mediapipe.net.nuspec"
+      ]
+    },
+    "Mediapipe.Net.Framework.Protobuf/0.8.9": {
+      "sha512": "OcgUflvCx2zpjfTEB8qTnnBJrQhlqnmYNT5G8vrBTTN1XyKRmALHESbYsHIjjsM/0i7CRiFyBxv4O5J5Z/PDow==",
+      "type": "package",
+      "path": "mediapipe.net.framework.protobuf/0.8.9",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "lib/net6.0/Mediapipe.Net.Framework.Protobuf.dll",
+        "lib/netstandard2.1/Mediapipe.Net.Framework.Protobuf.dll",
+        "mediapipe.net.framework.protobuf.0.8.9.nupkg.sha512",
+        "mediapipe.net.framework.protobuf.nuspec"
+      ]
+    },
+    "Mediapipe.Net.Runtime.CPU/0.9.1": {
+      "sha512": "M6+jZS1IFI8DEeQ5BKRuVOkWtlPwSoDGn8WL6sn+LLk9wgld6jI0HGRzE4j5s1C62E7k0kZHlSn0BKIa/y7y/w==",
+      "type": "package",
+      "path": "mediapipe.net.runtime.cpu/0.9.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "lib/netstandard2.1/_._",
+        "mediapipe.net.runtime.cpu.0.9.1.nupkg.sha512",
+        "mediapipe.net.runtime.cpu.nuspec",
+        "runtimes/linux-x64/native/libmediapipe_c.so",
+        "runtimes/win-x64/native/mediapipe_c.dll"
+      ]
+    },
+    "Mediapipe.Net.Runtime.GPU/0.9.1": {
+      "sha512": "wNouc2QdEeAi/ik8rWygq5W+EVOU91ueckb+9RoQnn2av+mxfD4wWkj1zOtvK6DNC0GpePyjZ5jG8194srmxPA==",
+      "type": "package",
+      "path": "mediapipe.net.runtime.gpu/0.9.1",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "lib/netstandard2.1/_._",
+        "mediapipe.net.runtime.gpu.0.9.1.nupkg.sha512",
+        "mediapipe.net.runtime.gpu.nuspec",
+        "runtimes/linux-x64/native/libmediapipe_c.so"
       ]
     },
     "MicroCom.Runtime/0.11.0": {
@@ -1606,6 +1774,11 @@
       "type": "project",
       "path": "../Gleam.Engine/Gleam.Engine.csproj",
       "msbuildProject": "../Gleam.Engine/Gleam.Engine.csproj"
+    },
+    "Gleam.Gestures/1.0.0": {
+      "type": "project",
+      "path": "../../Gleam.Gestures/Gleam.Gestures.csproj",
+      "msbuildProject": "../../Gleam.Gestures/Gleam.Gestures.csproj"
     }
   },
   "projectFileDependencyGroups": {
@@ -1618,6 +1791,7 @@
       "CommunityToolkit.Mvvm >= 8.4.0",
       "FlashCap >= 1.11.0",
       "Gleam.Engine >= 1.0.0",
+      "Gleam.Gestures >= 1.0.0",
       "SkiaSharp >= 2.88.9"
     ]
   },
@@ -1647,6 +1821,9 @@
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
+            "/home/delta/RiderProjects/gleam-eyes/Gleam.Gestures/Gleam.Gestures.csproj": {
+              "projectPath": "/home/delta/RiderProjects/gleam-eyes/Gleam.Gestures/Gleam.Gestures.csproj"
+            },
             "/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/Gleam.Engine.csproj": {
               "projectPath": "/home/delta/RiderProjects/gleam-eyes/src/Gleam.Engine/Gleam.Engine.csproj"
             }
@@ -1715,5 +1892,27 @@
         "runtimeIdentifierGraphPath": "/usr/lib/dotnet/sdk/8.0.122/PortableRuntimeIdentifierGraph.json"
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Gleam.Gestures depends on Mediapipe.Net.Runtime.CPU (>= 0.8.10) but Mediapipe.Net.Runtime.CPU 0.8.10 was not found. Mediapipe.Net.Runtime.CPU 0.9.1 was resolved instead.",
+      "libraryId": "Mediapipe.Net.Runtime.CPU",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    },
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Gleam.Gestures depends on Mediapipe.Net.Runtime.GPU (>= 0.8.10) but Mediapipe.Net.Runtime.GPU 0.8.10 was not found. Mediapipe.Net.Runtime.GPU 0.9.1 was resolved instead.",
+      "libraryId": "Mediapipe.Net.Runtime.GPU",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    }
+  ]
 }

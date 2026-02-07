@@ -78,3 +78,13 @@
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/Gleam.Ui.genruntimeconfig.cache
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/ref/Gleam.Ui.dll
 /home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/obj/Debug/net8.0/Gleam.Ui.sourcelink.json
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/bin/Debug/net8.0/Google.Protobuf.dll
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/bin/Debug/net8.0/Mediapipe.Net.dll
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/bin/Debug/net8.0/Mediapipe.Net.Framework.Protobuf.dll
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/bin/Debug/net8.0/runtimes/linux-x64/native/libmediapipe_c.so
+/home/delta/RiderProjects/gleam-eyes/src/Gleam.UI/bin/Debug/net8.0/runtimes/win-x64/native/mediapipe_c.dll
+/home/delta/RiderProjects/gleam-eyes/build/bin/net8.0/Gleam.Ui
+/home/delta/RiderProjects/gleam-eyes/build/bin/net8.0/Gleam.Ui.deps.json
+/home/delta/RiderProjects/gleam-eyes/build/bin/net8.0/Gleam.Ui.runtimeconfig.json
+/home/delta/RiderProjects/gleam-eyes/build/bin/net8.0/Gleam.Ui.dll
+/home/delta/RiderProjects/gleam-eyes/build/bin/net8.0/Gleam.Ui.pdb

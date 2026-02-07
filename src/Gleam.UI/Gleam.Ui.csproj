@@ -7,6 +7,9 @@
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+      <OutputPath>..\..\build\bin\</OutputPath>
+    </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="11.3.11" />
@@ -24,6 +27,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\\..\\Gleam.Gestures\\Gleam.Gestures.csproj" />
       <ProjectReference Include="..\Gleam.Engine\Gleam.Engine.csproj" />
     </ItemGroup>
 </Project>
