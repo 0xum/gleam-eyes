@@ -19,9 +19,21 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private const int EmptySnapshotClearThresholdFrames = 3;
     private static readonly long PreviewUpdateIntervalTicks = (long)(PreviewUpdateInterval.TotalSeconds * Stopwatch.Frequency);
     private const int RuntimeLogIntervalFrames = 60;
+    private const float NearHandsDistanceRatio = 0.18f;
+    private const float MidHandsDistanceRatio = 0.35f;
+    private const float PalmOpenMinRatio = 1.05f;
+    private const float PalmOpenMaxRatio = 1.95f;
     private static readonly OverlayStroke LandmarkStroke = new(1.5f, new ColorRgba(80, 255, 160, 180));
     private static readonly OverlayStroke ConnectionStroke = new(2.2f, new ColorRgba(255, 180, 80, 210));
+    private static readonly OverlayStroke HandsDistanceNearStroke = new(4f, new ColorRgba(80, 255, 120, 230));
+    private static readonly OverlayStroke HandsDistanceMidStroke = new(4f, new ColorRgba(255, 220, 80, 230));
+    private static readonly OverlayStroke HandsDistanceFarStroke = new(4f, new ColorRgba(255, 80, 80, 230));
+    private static readonly OverlayStroke PalmOpenCircleStroke = new(3f, new ColorRgba(90, 200, 255, 220));
+    private static readonly OverlayFill PalmOpenCircleFill = new(new ColorRgba(90, 200, 255, 48));
     private static readonly OverlayFill LandmarkFill = new(new ColorRgba(80, 255, 160, 80));
+    private static readonly int[] FingerTipIndices = [4, 8, 12, 16, 20];
+    private static readonly int[] PalmCenterIndices = [0, 5, 9, 13, 17];
+    private static readonly int[] PalmBaseIndices = [5, 9, 13, 17];
     private static readonly (int A, int B)[] HandConnections =
     [
         (0, 1), (1, 2), (2, 3), (3, 4),
@@ -364,6 +376,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
 
         var frameWidth = context.Frame.Width;
         var frameHeight = context.Frame.Height;
+        OverlayPoint? firstHandBase = null;
+        OverlayPoint? secondHandBase = null;
 
         Span<OverlayPoint> stackPoints = stackalloc OverlayPoint[21];
 
@@ -382,6 +396,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     stackPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
                 }
 
+                RegisterHandBasePoint(ref firstHandBase, ref secondHandBase, stackPoints[0]);
+
                 foreach (var (a, b) in HandConnections)
                 {
                     if (a >= pointsCount || b >= pointsCount)
@@ -397,6 +413,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     context.Scene.Add(new OverlayCircle(stackPoints[i], 4f, LandmarkStroke, LandmarkFill));
                 }
 
+                DrawPalmOpennessCircle(context.Scene, stackPoints[..pointsCount]);
+
                 continue;
             }
 
@@ -405,6 +423,8 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
             {
                 heapPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
             }
+
+            RegisterHandBasePoint(ref firstHandBase, ref secondHandBase, heapPoints[0]);
 
             foreach (var (a, b) in HandConnections)
             {
@@ -420,7 +440,114 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
             {
                 context.Scene.Add(new OverlayCircle(heapPoints[i], 4f, LandmarkStroke, LandmarkFill));
             }
+
+            DrawPalmOpennessCircle(context.Scene, heapPoints.AsSpan());
         }
+
+        if (firstHandBase is { } handA && secondHandBase is { } handB)
+        {
+            var stroke = SelectHandsDistanceStroke(handA, handB, frameWidth, frameHeight);
+            context.Scene.Add(new OverlayLine(handA, handB, stroke));
+        }
+    }
+
+    private static void RegisterHandBasePoint(ref OverlayPoint? firstHandBase, ref OverlayPoint? secondHandBase, OverlayPoint handBase)
+    {
+        if (firstHandBase is null)
+        {
+            firstHandBase = handBase;
+            return;
+        }
+
+        if (secondHandBase is null)
+        {
+            secondHandBase = handBase;
+        }
+    }
+
+    private static OverlayStroke SelectHandsDistanceStroke(OverlayPoint handA, OverlayPoint handB, int frameWidth, int frameHeight)
+    {
+        var dx = handA.X - handB.X;
+        var dy = handA.Y - handB.Y;
+        var distance = MathF.Sqrt((dx * dx) + (dy * dy));
+        var frameDiagonal = MathF.Sqrt((frameWidth * frameWidth) + (frameHeight * frameHeight));
+
+        if (frameDiagonal <= 0f)
+        {
+            return HandsDistanceFarStroke;
+        }
+
+        var distanceRatio = distance / frameDiagonal;
+        if (distanceRatio <= NearHandsDistanceRatio)
+        {
+            return HandsDistanceNearStroke;
+        }
+
+        if (distanceRatio <= MidHandsDistanceRatio)
+        {
+            return HandsDistanceMidStroke;
+        }
+
+        return HandsDistanceFarStroke;
+    }
+
+    private static void DrawPalmOpennessCircle(OverlayScene scene, ReadOnlySpan<OverlayPoint> points)
+    {
+        if (points.Length <= FingerTipIndices[^1])
+        {
+            return;
+        }
+
+        var palmCenter = AveragePoints(points, PalmCenterIndices);
+        var averageTipDistance = AverageDistanceToCenter(points, FingerTipIndices, palmCenter);
+        var palmBaseDistance = AverageDistanceToCenter(points, PalmBaseIndices, palmCenter);
+        if (palmBaseDistance <= 0.001f)
+        {
+            return;
+        }
+
+        var opennessRatio = averageTipDistance / palmBaseDistance;
+        var opennessNormalized = Math.Clamp(
+            (opennessRatio - PalmOpenMinRatio) / (PalmOpenMaxRatio - PalmOpenMinRatio),
+            0f,
+            1f);
+
+        var minRadius = palmBaseDistance * 0.55f;
+        var maxRadius = palmBaseDistance * 1.45f;
+        var radius = minRadius + ((maxRadius - minRadius) * opennessNormalized);
+        radius = Math.Max(8f, radius);
+
+        scene.Add(new OverlayCircle(palmCenter, radius, PalmOpenCircleStroke, PalmOpenCircleFill));
+    }
+
+    private static OverlayPoint AveragePoints(ReadOnlySpan<OverlayPoint> points, ReadOnlySpan<int> indices)
+    {
+        var sumX = 0f;
+        var sumY = 0f;
+
+        for (var i = 0; i < indices.Length; i++)
+        {
+            var p = points[indices[i]];
+            sumX += p.X;
+            sumY += p.Y;
+        }
+
+        var count = indices.Length;
+        return OverlayPoint.FromPixels(sumX / count, sumY / count);
+    }
+
+    private static float AverageDistanceToCenter(ReadOnlySpan<OverlayPoint> points, ReadOnlySpan<int> indices, OverlayPoint center)
+    {
+        var total = 0f;
+        for (var i = 0; i < indices.Length; i++)
+        {
+            var p = points[indices[i]];
+            var dx = p.X - center.X;
+            var dy = p.Y - center.Y;
+            total += MathF.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        return total / indices.Length;
     }
 
     private static OverlayPoint ToOverlayPoint(GestureLandmarkPoint point, int frameWidth, int frameHeight)
