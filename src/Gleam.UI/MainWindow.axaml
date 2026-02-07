@@ -3,17 +3,102 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:Gleam.Ui.ViewModels"
+        xmlns:sidebarTabs="clr-namespace:Gleam.Ui.ViewModels.SidebarTabs"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="720"
         x:Class="Gleam.Ui.MainWindow"
+        x:CompileBindings="False"
         x:DataType="viewModels:MainWindowViewModel"
         Title="Gleam.UI">
+    <Window.DataTemplates>
+        <DataTemplate DataType="sidebarTabs:DebugSidebarTabViewModel">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Debug" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding DataContext.FpsText, RelativeSource={RelativeSource AncestorType=Window}}" />
+                <TextBlock Text="{Binding DataContext.FrameInfoText, RelativeSource={RelativeSource AncestorType=Window}}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding DataContext.StatusText, RelativeSource={RelativeSource AncestorType=Window}}" Opacity="0.8" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="sidebarTabs:PluginsSidebarTabViewModel">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <TextBlock Text="Plugins" FontSize="16" FontWeight="SemiBold" />
+                <Border Grid.Row="1" Background="#111318" CornerRadius="6" Padding="8">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding DataContext.Plugins, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#181B20" CornerRadius="4" Padding="6" Margin="0,0,0,6">
+                                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="2">
+                                            <TextBlock Text="{Binding Metadata.Name}" FontWeight="SemiBold" />
+                                            <CheckBox Grid.Column="1" IsChecked="{Binding Instance.IsEnabled}" />
+                                            <TextBlock Grid.Row="1" Text="{Binding Metadata.Description}" TextWrapping="Wrap" Opacity="0.8" />
+                                            <TextBlock Grid.Row="2" FontSize="11" Opacity="0.7">
+                                                <Run Text="Versão: " />
+                                                <Run Text="{Binding Metadata.Version}" />
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate DataType="sidebarTabs:LogsSidebarTabViewModel">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <TextBlock Text="Logs" FontSize="16" FontWeight="SemiBold" />
+                <Border Grid.Row="1" Background="#111318" CornerRadius="6" Padding="8">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding DataContext.PluginLogs, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate DataType="sidebarTabs:NativeSettingsSidebarTabViewModel">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Configurações" FontSize="16" FontWeight="SemiBold" />
+                <CheckBox Content="Modo debug" IsChecked="{Binding DataContext.IsDebugMode, RelativeSource={RelativeSource AncestorType=Window}}" />
+                <CheckBox Content="Overlay de grid" IsChecked="{Binding DataContext.IsGridEnabled, RelativeSource={RelativeSource AncestorType=Window}}" />
+                <CheckBox Content="Overlay animado" IsChecked="{Binding DataContext.IsAnimatedEnabled, RelativeSource={RelativeSource AncestorType=Window}}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate DataType="sidebarTabs:PluginSettingsSidebarTabViewModel">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <TextBlock Text="{Binding PluginName}" FontSize="16" FontWeight="SemiBold" />
+                <Border Grid.Row="1" Background="#111318" CornerRadius="6" Padding="8">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ContentControl Content="{Binding View}" />
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </DataTemplate>
+    </Window.DataTemplates>
+
     <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="12" Background="#14171A">
-            <StackPanel Orientation="Horizontal" Spacing="12">
+        <Border DockPanel.Dock="Top" Padding="8" Background="#14171A" BorderBrush="#232932" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="Start" Command="{Binding StartCommand}" />
                 <Button Content="Stop" Command="{Binding StopCommand}" />
-                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="White" />
             </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Padding="8,6" Background="#101317" BorderBrush="#232932" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="16">
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding FpsText}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding PluginTickText}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding FrameInfoText}" VerticalAlignment="Center" HorizontalAlignment="Right" Opacity="0.75" />
+            </Grid>
         </Border>
 
         <Grid ColumnDefinitions="2*,1*" RowDefinitions="*" Margin="12">
@@ -24,51 +109,15 @@
             </Border>
 
             <Border Grid.Column="1" Background="#1A1D22" CornerRadius="8" Padding="12">
-                <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="16">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Debug" FontSize="18" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding FpsText}" />
-                        <TextBlock Text="{Binding FrameInfoText}" TextWrapping="Wrap" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Row="1" Spacing="6">
-                        <TextBlock Text="Plugins" FontSize="16" FontWeight="SemiBold" />
-                        <Border Background="#111318" CornerRadius="6" Padding="8">
-                            <ItemsControl ItemsSource="{Binding Plugins}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="#181B20" CornerRadius="4" Padding="6" Margin="0,0,0,6">
-                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="2">
-                                                <TextBlock Text="{Binding Metadata.Name}" FontWeight="SemiBold" />
-                                                <CheckBox Grid.Column="1" IsChecked="{Binding Instance.IsEnabled}" />
-                                                <TextBlock Grid.Row="1" Text="{Binding Metadata.Description}" TextWrapping="Wrap" Opacity="0.8" />
-                                                <TextBlock Grid.Row="2" FontSize="11" Opacity="0.7">
-                                                    <Run Text="Versão: " />
-                                                    <Run Text="{Binding Metadata.Version}" />
-                                                </TextBlock>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Border>
-                    </StackPanel>
-
-                    <StackPanel Grid.Row="2" Spacing="6">
-                        <TextBlock Text="Logs" FontSize="16" FontWeight="SemiBold" />
-                        <Border Background="#111318" CornerRadius="6" Padding="8">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" Height="220">
-                                <ItemsControl ItemsSource="{Binding PluginLogs}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Border>
-                    </StackPanel>
-                </Grid>
+                <TabControl ItemsSource="{Binding SidebarTabs}"
+                            SelectedItem="{Binding SelectedSidebarTab}"
+                            TabStripPlacement="Top">
+                    <TabControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Title}" Margin="2" />
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+                </TabControl>
             </Border>
         </Grid>
     </DockPanel>

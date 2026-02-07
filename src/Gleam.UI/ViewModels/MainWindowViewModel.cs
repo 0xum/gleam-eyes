@@ -1,8 +1,11 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -15,6 +18,7 @@ using Gleam.Engine.Processing;
 using Gleam.Engine.Pipeline;
 using Gleam.Engine.Plugins;
 using Gleam.Ui.Imaging;
+using Gleam.Ui.ViewModels.SidebarTabs;
 
 namespace Gleam.Ui.ViewModels;
 
@@ -30,10 +34,12 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly OverlayBitmapComposer _composer = new();
     private readonly SampleGesturePlugin _sampleGesture = new();
     private int _frameCounter;
+    private long _pluginTickCounter;
     private CancellationTokenSource? _cts;
     private Task? _consumerTask;
     private ICameraCapture? _camera;
     private readonly ObservableCollection<string> _pluginLogs = new();
+    private readonly ObservableCollection<SidebarTabViewModel> _sidebarTabs = new();
 
     [ObservableProperty]
     private Bitmap? previewImage;
@@ -51,22 +57,34 @@ public partial class MainWindowViewModel : ObservableObject
     private string frameInfoText = "Frame: -";
 
     [ObservableProperty]
+    private string pluginTickText = "Ticks: 0";
+
+    [ObservableProperty]
     private bool isGridEnabled = true;
 
     [ObservableProperty]
     private bool isAnimatedEnabled;
 
+    [ObservableProperty]
+    private bool isDebugMode;
+
+    [ObservableProperty]
+    private SidebarTabViewModel? selectedSidebarTab;
+
     public ReadOnlyObservableCollection<PluginDescriptor> Plugins { get; }
     public ReadOnlyObservableCollection<string> PluginLogs { get; }
+    public ReadOnlyObservableCollection<SidebarTabViewModel> SidebarTabs { get; }
 
     public MainWindowViewModel()
     {
         Plugins = new ReadOnlyObservableCollection<PluginDescriptor>(_plugins);
         PluginLogs = new ReadOnlyObservableCollection<string>(_pluginLogs);
+        SidebarTabs = new ReadOnlyObservableCollection<SidebarTabViewModel>(_sidebarTabs);
         _pluginHandler.LoadPlugins();
         RegisterBuiltIn(new OverlayModulePluginAdapter(_gridModule), _gridModule.Name, "Overlay grid", "1.0.0");
         RegisterBuiltIn(new OverlayModulePluginAdapter(_animatedModule), _animatedModule.Name, "Overlay animado", "1.0.0");
         RefreshPlugins();
+        RefreshSidebarTabs();
         PluginLogger.Message += OnPluginLog;
         PluginLogger.Log("[UI] Plugin logger subscribed.");
     }
@@ -109,6 +127,53 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private void RefreshSidebarTabs()
+    {
+        var selectedTitle = SelectedSidebarTab?.Title;
+
+        _sidebarTabs.Clear();
+        _sidebarTabs.Add(new DebugSidebarTabViewModel());
+        _sidebarTabs.Add(new PluginsSidebarTabViewModel());
+        _sidebarTabs.Add(new LogsSidebarTabViewModel());
+        _sidebarTabs.Add(new NativeSettingsSidebarTabViewModel());
+
+        foreach (var descriptor in _pluginHandler.Plugins)
+        {
+            var plugin = descriptor.Instance;
+            var pluginType = plugin.GetType();
+            var createSettingsMethod = pluginType.GetMethod("CreateSettingsView", BindingFlags.Public | BindingFlags.Instance, Type.EmptyTypes);
+            if (createSettingsMethod == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                var settingsView = createSettingsMethod.Invoke(plugin, null);
+                if (settingsView is not Control control)
+                {
+                    continue;
+                }
+
+                var tabTitle = pluginType.GetProperty("SettingsTabTitle", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(plugin) as string;
+
+                tabTitle = string.IsNullOrWhiteSpace(tabTitle)
+                    ? descriptor.Metadata.Name
+                    : tabTitle;
+
+                _sidebarTabs.Add(new PluginSettingsSidebarTabViewModel(tabTitle, descriptor.Metadata.Name, control));
+            }
+            catch (Exception ex)
+            {
+                PluginLogger.Log($"[UI] Falha ao criar aba de settings para plugin '{descriptor.Metadata.Name}': {ex.Message}");
+            }
+        }
+
+        SelectedSidebarTab = _sidebarTabs.FirstOrDefault(t => t.Title == selectedTitle)
+                           ?? _sidebarTabs.FirstOrDefault();
+    }
+
     partial void OnIsGridEnabledChanged(bool value)
     {
         _gridModule.IsEnabled = value;
@@ -141,6 +206,8 @@ public partial class MainWindowViewModel : ObservableObject
 
             StatusText = "Capturing...";
             _frameCounter = 0;
+            _pluginTickCounter = 0;
+            PluginTickText = "Ticks: 0";
             _fpsStopwatch.Restart();
 
             _consumerTask = ConsumeFramesAsync(_cts.Token);
@@ -224,6 +291,7 @@ public partial class MainWindowViewModel : ObservableObject
                 try
                 {
                     var processingResult = _pluginHandler.OnUpdateCapture(frame);
+                    UpdatePluginTicks();
                     bitmap = _composer.Compose(frame, processingResult.Scene);
                     var info = $"Frame: {frame.Width}x{frame.Height} ({frame.PixelFormat})";
                     UpdateFrameInfo(info);
@@ -308,7 +376,23 @@ public partial class MainWindowViewModel : ObservableObject
         {
             FpsText = "FPS: 0";
             FrameInfoText = "Frame: -";
+            PluginTickText = "Ticks: 0";
         });
+    }
+
+    private void UpdatePluginTicks()
+    {
+        _pluginTickCounter++;
+        var text = $"Ticks: {_pluginTickCounter}";
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            PluginTickText = text;
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() => PluginTickText = text);
+        }
     }
 
     partial void OnIsRunningChanged(bool value)

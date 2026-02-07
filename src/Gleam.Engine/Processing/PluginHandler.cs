@@ -79,7 +79,6 @@ public sealed class PluginHandler
         var scene = new OverlayScene();
         var context = new PluginFrameContext(frame, scene);
 
-        PluginLogger.Log("[PluginHandler] OnUpdateCapture tick.");
         foreach (var plugin in _plugins.Select(p => p.Instance))
         {
             if (!plugin.IsEnabled)
