@@ -20,13 +20,15 @@ public sealed class PluginHandler
         _pluginKeys.Clear();
         var assemblies = new List<Assembly> { Assembly.GetExecutingAssembly() };
         var pluginDirectory = Path.Combine(AppContext.BaseDirectory, "plugins");
+        PluginLogger.Log($"[PluginHandler] Loading plugins from: {pluginDirectory}");
         RegisterPluginResolvers(pluginDirectory);
         if (Directory.Exists(pluginDirectory))
         {
-            foreach (var dllPath in Directory.EnumerateFiles(pluginDirectory, "*.dll"))
+            foreach (var dllPath in Directory.EnumerateFiles(pluginDirectory, "*.dll", SearchOption.AllDirectories))
             {
                 try
                 {
+                    PluginLogger.Log($"[PluginHandler] Loading assembly: {dllPath}");
                     assemblies.Add(Assembly.LoadFrom(dllPath));
                 }
                 catch
@@ -166,7 +168,7 @@ public sealed class PluginHandler
 
         if (Directory.Exists(pluginDirectory))
         {
-            foreach (var dllPath in Directory.EnumerateFiles(pluginDirectory, "*.dll"))
+            foreach (var dllPath in Directory.EnumerateFiles(pluginDirectory, "*.dll", SearchOption.AllDirectories))
             {
                 if (!resolvers.ContainsKey(dllPath))
                 {
