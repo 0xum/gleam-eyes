@@ -24,6 +24,8 @@ namespace Gleam.Ui.ViewModels;
 
 public partial class MainWindowViewModel : ObservableObject
 {
+    private const string GesturePluginTypeName = "Gleam.Gestures.GestureProcessingPlugin";
+
     private readonly FramePipeline _pipeline = new();
     private readonly Stopwatch _fpsStopwatch = new();
     private readonly object _imageLock = new();
@@ -40,6 +42,12 @@ public partial class MainWindowViewModel : ObservableObject
     private ICameraCapture? _camera;
     private readonly ObservableCollection<string> _pluginLogs = new();
     private readonly ObservableCollection<SidebarTabViewModel> _sidebarTabs = new();
+    private object? _gesturePluginInstance;
+    private MethodInfo? _gestureOpenDebugMethod;
+    private PropertyInfo? _gestureCanOpenDebugProperty;
+    private PropertyInfo? _gestureToolbarLabelProperty;
+    private EventInfo? _gestureToolbarStateChangedEvent;
+    private Delegate? _gestureToolbarStateChangedHandler;
 
     [ObservableProperty]
     private Bitmap? previewImage;
@@ -71,6 +79,12 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private SidebarTabViewModel? selectedSidebarTab;
 
+    [ObservableProperty]
+    private bool isGestureDebugButtonVisible;
+
+    [ObservableProperty]
+    private string gestureDebugButtonLabel = "Open Gesture Debug";
+
     public ReadOnlyObservableCollection<PluginDescriptor> Plugins { get; }
     public ReadOnlyObservableCollection<string> PluginLogs { get; }
     public ReadOnlyObservableCollection<SidebarTabViewModel> SidebarTabs { get; }
@@ -82,8 +96,9 @@ public partial class MainWindowViewModel : ObservableObject
         SidebarTabs = new ReadOnlyObservableCollection<SidebarTabViewModel>(_sidebarTabs);
         _pluginHandler.LoadPlugins();
         RegisterBuiltIn(new OverlayModulePluginAdapter(_gridModule), _gridModule.Name, "Overlay grid", "1.0.0");
-        RegisterBuiltIn(new OverlayModulePluginAdapter(_animatedModule), _animatedModule.Name, "Overlay animado", "1.0.0");
+        RegisterBuiltIn(new OverlayModulePluginAdapter(_animatedModule), _animatedModule.Name, "Animated overlay", "1.0.0");
         RefreshPlugins();
+        RefreshGestureDebugIntegration();
         RefreshSidebarTabs();
         PluginLogger.Message += OnPluginLog;
         PluginLogger.Log("[UI] Plugin logger subscribed.");
@@ -125,7 +140,109 @@ public partial class MainWindowViewModel : ObservableObject
         {
             _plugins.Add(descriptor);
         }
+
+        RefreshGestureDebugIntegration();
     }
+
+    private void RefreshGestureDebugIntegration()
+    {
+        UnsubscribeGestureToolbarEvent();
+
+        var descriptor = _pluginHandler.Plugins
+            .FirstOrDefault(p => string.Equals(p.Instance.GetType().FullName, GesturePluginTypeName, StringComparison.Ordinal));
+
+        if (descriptor == null)
+        {
+            _gesturePluginInstance = null;
+            _gestureOpenDebugMethod = null;
+            _gestureCanOpenDebugProperty = null;
+            _gestureToolbarLabelProperty = null;
+            IsGestureDebugButtonVisible = false;
+            GestureDebugButtonLabel = "Open Gesture Debug";
+            return;
+        }
+
+        var plugin = descriptor.Instance;
+        var pluginType = plugin.GetType();
+
+        _gesturePluginInstance = plugin;
+        _gestureOpenDebugMethod = pluginType.GetMethod("OpenDebugWindow", BindingFlags.Public | BindingFlags.Instance, Type.EmptyTypes);
+        _gestureCanOpenDebugProperty = pluginType.GetProperty("CanOpenDebugWindow", BindingFlags.Public | BindingFlags.Instance);
+        _gestureToolbarLabelProperty = pluginType.GetProperty("ToolbarActionLabel", BindingFlags.Public | BindingFlags.Instance);
+        _gestureToolbarStateChangedEvent = pluginType.GetEvent("ToolbarStateChanged", BindingFlags.Public | BindingFlags.Instance);
+
+        SubscribeGestureToolbarEvent();
+        UpdateGestureDebugButtonState();
+    }
+
+    private void SubscribeGestureToolbarEvent()
+    {
+        if (_gesturePluginInstance == null || _gestureToolbarStateChangedEvent == null)
+        {
+            return;
+        }
+
+        var handler = new Action(UpdateGestureDebugButtonState);
+        _gestureToolbarStateChangedEvent.AddEventHandler(_gesturePluginInstance, handler);
+        _gestureToolbarStateChangedHandler = handler;
+    }
+
+    private void UnsubscribeGestureToolbarEvent()
+    {
+        if (_gesturePluginInstance == null || _gestureToolbarStateChangedEvent == null || _gestureToolbarStateChangedHandler == null)
+        {
+            return;
+        }
+
+        _gestureToolbarStateChangedEvent.RemoveEventHandler(_gesturePluginInstance, _gestureToolbarStateChangedHandler);
+        _gestureToolbarStateChangedHandler = null;
+    }
+
+    private void UpdateGestureDebugButtonState()
+    {
+        var canOpen = false;
+        if (_gesturePluginInstance != null && _gestureCanOpenDebugProperty != null)
+        {
+            canOpen = _gestureCanOpenDebugProperty.GetValue(_gesturePluginInstance) as bool? == true;
+        }
+
+        var label = "Open Gesture Debug";
+        if (_gesturePluginInstance != null && _gestureToolbarLabelProperty != null)
+        {
+            label = _gestureToolbarLabelProperty.GetValue(_gesturePluginInstance) as string ?? label;
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            IsGestureDebugButtonVisible = canOpen;
+            GestureDebugButtonLabel = label;
+            OpenGestureDebugWindowCommand.NotifyCanExecuteChanged();
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                IsGestureDebugButtonVisible = canOpen;
+                GestureDebugButtonLabel = label;
+                OpenGestureDebugWindowCommand.NotifyCanExecuteChanged();
+            });
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanOpenGestureDebugWindow))]
+    private void OpenGestureDebugWindow()
+    {
+        try
+        {
+            _gestureOpenDebugMethod?.Invoke(_gesturePluginInstance, null);
+        }
+        catch (Exception ex)
+        {
+            PluginLogger.Log($"[UI] Failed to open gesture plugin debug window: {ex.Message}");
+        }
+    }
+
+    private bool CanOpenGestureDebugWindow() => IsGestureDebugButtonVisible;
 
     private void RefreshSidebarTabs()
     {
@@ -166,7 +283,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                PluginLogger.Log($"[UI] Falha ao criar aba de settings para plugin '{descriptor.Metadata.Name}': {ex.Message}");
+                PluginLogger.Log($"[UI] Failed to create settings tab for plugin '{descriptor.Metadata.Name}': {ex.Message}");
             }
         }
 
@@ -198,7 +315,7 @@ public partial class MainWindowViewModel : ObservableObject
             IsRunning = true;
             _composer.Reset();
             _pluginHandler.OnStartCapture();
-            PluginLogger.Log("[UI] StartAsync iniciado.");
+            PluginLogger.Log("[UI] StartAsync started.");
             _cts = new CancellationTokenSource();
             _camera = CameraFactory.CreateDefault();
             _camera.FrameArrived += OnFrameArrived;
@@ -211,6 +328,7 @@ public partial class MainWindowViewModel : ObservableObject
             _fpsStopwatch.Restart();
 
             _consumerTask = ConsumeFramesAsync(_cts.Token);
+            UpdateGestureDebugButtonState();
             await Task.CompletedTask;
         }
         catch (Exception ex)
@@ -261,6 +379,7 @@ public partial class MainWindowViewModel : ObservableObject
                 _composer.Reset();
             });
             _pluginHandler.OnEndCapture();
+            UpdateGestureDebugButtonState();
         }
     }
 
@@ -400,10 +519,15 @@ public partial class MainWindowViewModel : ObservableObject
         if (Dispatcher.UIThread.CheckAccess())
         {
             StartCommand.NotifyCanExecuteChanged();
+            OpenGestureDebugWindowCommand.NotifyCanExecuteChanged();
             return;
         }
 
-        Dispatcher.UIThread.Post(() => StartCommand.NotifyCanExecuteChanged());
+        Dispatcher.UIThread.Post(() =>
+        {
+            StartCommand.NotifyCanExecuteChanged();
+            OpenGestureDebugWindowCommand.NotifyCanExecuteChanged();
+        });
     }
 
     private void UpdateFrameInfo(string info)
