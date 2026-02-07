@@ -55,6 +55,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private bool _isRunning;
     private long _processedFrames;
     private long _emptyFrames;
+    private string? _previousCurrentDirectory;
 
     public bool IsRunning => _isRunning;
 
@@ -65,6 +66,9 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             return;
         }
 
+        EnsureExecutableMediapipeMirrorFromPlugin();
+        ConfigureMediaPipeResourceRoot();
+        SwitchWorkingDirectoryToPluginIfPossible();
         LogAssetDiagnostics();
 
         var graphConfig = ResolveGraphConfig();
@@ -164,6 +168,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             _graph?.Dispose();
             _graph = null;
             _isRunning = false;
+            RestorePreviousWorkingDirectory();
         }
     }
 
@@ -181,10 +186,17 @@ internal sealed class MediaPipeGraphRunner : IDisposable
 
     private static string ResolveGraphConfig()
     {
+        var pluginBaseDirectory = GetPluginBaseDirectory();
         var candidates = new[]
         {
+            Path.Combine(pluginBaseDirectory, "mediapipe", "modules", "hand_landmark", "hand_landmark_tracking_cpu.pbtxt"),
+            Path.Combine(pluginBaseDirectory, "Dependencies", "mediapipe", "modules", "hand_landmark", "hand_landmark_tracking_cpu.pbtxt"),
+            Path.Combine(AppContext.BaseDirectory, "plugins", "gestures", "mediapipe", "modules", "hand_landmark", "hand_landmark_tracking_cpu.pbtxt"),
             Path.Combine(AppContext.BaseDirectory, "plugins", "mediapipe", "modules", "hand_landmark", "hand_landmark_tracking_cpu.pbtxt"),
             Path.Combine(AppContext.BaseDirectory, "mediapipe", "modules", "hand_landmark", "hand_landmark_tracking_cpu.pbtxt"),
+            Path.Combine(pluginBaseDirectory, "mediapipe", "hand_landmark_tracking_cpu.pbtxt"),
+            Path.Combine(pluginBaseDirectory, "Dependencies", "mediapipe", "hand_landmark_tracking_cpu.pbtxt"),
+            Path.Combine(AppContext.BaseDirectory, "plugins", "gestures", "mediapipe", "hand_landmark_tracking_cpu.pbtxt"),
             Path.Combine(AppContext.BaseDirectory, "plugins", "mediapipe", "hand_landmark_tracking_cpu.pbtxt"),
             Path.Combine(AppContext.BaseDirectory, "mediapipe", "hand_landmark_tracking_cpu.pbtxt")
         };
@@ -222,6 +234,25 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private static string? ResolveAssetAbsolutePath(string relativePath)
     {
         var normalizedRelative = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        var pluginBaseDirectory = GetPluginBaseDirectory();
+        var candidateInPluginLocal = Path.Combine(pluginBaseDirectory, normalizedRelative);
+        if (File.Exists(candidateInPluginLocal))
+        {
+            return candidateInPluginLocal;
+        }
+
+        var candidateInPluginDependencies = Path.Combine(pluginBaseDirectory, "Dependencies", normalizedRelative);
+        if (File.Exists(candidateInPluginDependencies))
+        {
+            return candidateInPluginDependencies;
+        }
+
+        var candidateInPlugin = Path.Combine(AppContext.BaseDirectory, "plugins", "gestures", normalizedRelative);
+        if (File.Exists(candidateInPlugin))
+        {
+            return candidateInPlugin;
+        }
+
         var candidateInExe = Path.Combine(AppContext.BaseDirectory, normalizedRelative);
         if (File.Exists(candidateInExe))
         {
@@ -235,11 +266,15 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private static void LogAssetDiagnostics()
     {
         var baseDir = AppContext.BaseDirectory;
+        var pluginBaseDirectory = GetPluginBaseDirectory();
         foreach (var relativePath in RequiredModelRelativePaths)
         {
+            var candidateInPluginLocal = Path.Combine(pluginBaseDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var candidateInPluginDependencies = Path.Combine(pluginBaseDirectory, "Dependencies", relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var candidateInPlugin = Path.Combine(baseDir, "plugins", "gestures", relativePath.Replace('/', Path.DirectorySeparatorChar));
             var candidateInExe = Path.Combine(baseDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
             var candidateInPlugins = Path.Combine(baseDir, "plugins", relativePath.Replace('/', Path.DirectorySeparatorChar));
-            var exists = File.Exists(candidateInExe) || File.Exists(candidateInPlugins);
+            var exists = File.Exists(candidateInPluginLocal) || File.Exists(candidateInPluginDependencies) || File.Exists(candidateInPlugin) || File.Exists(candidateInExe) || File.Exists(candidateInPlugins);
 
             if (exists)
             {
@@ -249,6 +284,119 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             {
                 PluginLogger.Log($"GestureProcessingPlugin: MediaPipe asset MISSING: {relativePath}");
             }
+        }
+    }
+
+    private static void ConfigureMediaPipeResourceRoot()
+    {
+        var pluginBaseDirectory = GetPluginBaseDirectory();
+        if (!Directory.Exists(Path.Combine(pluginBaseDirectory, "mediapipe"))
+            && !Directory.Exists(Path.Combine(pluginBaseDirectory, "Dependencies", "mediapipe")))
+        {
+            return;
+        }
+
+        Environment.SetEnvironmentVariable("MEDIAPIPE_RESOURCE_DIR", pluginBaseDirectory);
+    }
+
+    private static void EnsureExecutableMediapipeMirrorFromPlugin()
+    {
+        var pluginBaseDirectory = GetPluginBaseDirectory();
+        var pluginMediapipeDir = Path.Combine(pluginBaseDirectory, "mediapipe");
+        if (!Directory.Exists(pluginMediapipeDir))
+        {
+            pluginMediapipeDir = Path.Combine(pluginBaseDirectory, "Dependencies", "mediapipe");
+        }
+
+        if (!Directory.Exists(pluginMediapipeDir))
+        {
+            return;
+        }
+
+        var appMediapipeDir = Path.Combine(AppContext.BaseDirectory, "mediapipe");
+        if (Directory.Exists(appMediapipeDir))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateSymbolicLink(appMediapipeDir, pluginMediapipeDir);
+            PluginLogger.Log($"GestureProcessingPlugin: linked MediaPipe assets into app base: {appMediapipeDir}");
+            return;
+        }
+        catch
+        {
+            // fallback to physical copy when symlink is not allowed
+        }
+
+        CopyDirectoryRecursive(pluginMediapipeDir, appMediapipeDir);
+        PluginLogger.Log($"GestureProcessingPlugin: copied MediaPipe assets into app base: {appMediapipeDir}");
+    }
+
+    private static void CopyDirectoryRecursive(string sourceDir, string destinationDir)
+    {
+        Directory.CreateDirectory(destinationDir);
+
+        foreach (var sourceFile in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDir, sourceFile);
+            var destinationFile = Path.Combine(destinationDir, relativePath);
+            var destinationFolder = Path.GetDirectoryName(destinationFile);
+            if (!string.IsNullOrWhiteSpace(destinationFolder))
+            {
+                Directory.CreateDirectory(destinationFolder);
+            }
+
+            File.Copy(sourceFile, destinationFile, overwrite: true);
+        }
+    }
+
+    private static string GetPluginBaseDirectory()
+    {
+        var assemblyLocation = typeof(MediaPipeGraphRunner).Assembly.Location;
+        var directory = Path.GetDirectoryName(assemblyLocation);
+        return string.IsNullOrWhiteSpace(directory) ? AppContext.BaseDirectory : directory;
+    }
+
+    private void SwitchWorkingDirectoryToPluginIfPossible()
+    {
+        var pluginBaseDirectory = GetPluginBaseDirectory();
+        if (!Directory.Exists(Path.Combine(pluginBaseDirectory, "mediapipe"))
+            && !Directory.Exists(Path.Combine(pluginBaseDirectory, "Dependencies", "mediapipe")))
+        {
+            return;
+        }
+
+        try
+        {
+            _previousCurrentDirectory = Directory.GetCurrentDirectory();
+            Directory.SetCurrentDirectory(pluginBaseDirectory);
+        }
+        catch (Exception ex)
+        {
+            PluginLogger.Log($"GestureProcessingPlugin: unable to switch working directory for MediaPipe assets: {ex.Message}");
+        }
+    }
+
+    private void RestorePreviousWorkingDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(_previousCurrentDirectory))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.SetCurrentDirectory(_previousCurrentDirectory);
+        }
+        catch
+        {
+            // no-op
+        }
+        finally
+        {
+            _previousCurrentDirectory = null;
         }
     }
 
