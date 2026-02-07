@@ -27,7 +27,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\\..\\Gleam.Gestures\\Gleam.Gestures.csproj" />
       <ProjectReference Include="..\Gleam.Engine\Gleam.Engine.csproj" />
     </ItemGroup>
 </Project>
