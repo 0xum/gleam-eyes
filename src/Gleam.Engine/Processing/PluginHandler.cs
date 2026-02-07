@@ -24,7 +24,7 @@ public sealed class PluginHandler
         RegisterPluginResolvers(pluginDirectory);
         if (Directory.Exists(pluginDirectory))
         {
-            foreach (var dllPath in Directory.EnumerateFiles(pluginDirectory, "*.dll", SearchOption.AllDirectories))
+            foreach (var dllPath in GetPluginAssemblyCandidates(pluginDirectory))
             {
                 try
                 {
@@ -44,6 +44,28 @@ public sealed class PluginHandler
             {
                 RegisterDescriptor(descriptor);
             }
+        }
+    }
+
+    private static IEnumerable<string> GetPluginAssemblyCandidates(string pluginDirectory)
+    {
+        var allDlls = Directory.EnumerateFiles(pluginDirectory, "*.dll", SearchOption.AllDirectories)
+            .Select(path => new FileInfo(path))
+            .ToList();
+
+        foreach (var group in allDlls.GroupBy(f => Path.GetFileNameWithoutExtension(f.Name), StringComparer.OrdinalIgnoreCase))
+        {
+            var selected = group
+                .OrderBy(f => string.Equals(f.DirectoryName, pluginDirectory, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenByDescending(f => f.LastWriteTimeUtc)
+                .First();
+
+            foreach (var skipped in group.Where(f => !string.Equals(f.FullName, selected.FullName, StringComparison.OrdinalIgnoreCase)))
+            {
+                PluginLogger.Log($"[PluginHandler] Ignoring duplicate plugin assembly: {skipped.FullName}");
+            }
+
+            yield return selected.FullName;
         }
     }
 
