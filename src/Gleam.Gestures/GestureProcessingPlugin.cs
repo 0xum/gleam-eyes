@@ -14,6 +14,7 @@ namespace Gleam.Gestures;
 public class GestureProcessingPlugin : IFrameProcessingPlugin
 {
     private static readonly TimeSpan PreviewUpdateInterval = TimeSpan.FromMilliseconds(66);
+    private const int RuntimeLogIntervalFrames = 60;
     private static readonly OverlayStroke LandmarkStroke = new(1.5f, new ColorRgba(80, 255, 160, 180));
     private static readonly OverlayStroke ConnectionStroke = new(2.2f, new ColorRgba(255, 180, 80, 210));
     private static readonly OverlayFill LandmarkFill = new(new ColorRgba(80, 255, 160, 80));
@@ -42,6 +43,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private RawFrame? _latestRawFrame;
     private GestureLandmarkSnapshot _latestLandmarks = GestureLandmarkSnapshot.Empty;
     private int _landmarkDetectionCount;
+    private bool _mediaPipeFaulted;
 
     public event Action? ToolbarStateChanged;
 
@@ -93,6 +95,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _preparedFrameCount = 0;
         _droppedFrameCount = 0;
         _landmarkDetectionCount = 0;
+        _mediaPipeFaulted = false;
         _isCaptureRunning = true;
         lock (_previewSync)
         {
@@ -148,8 +151,11 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
             _previewSignal.Release();
         }
 
-        PluginLogger.Log(
-            $"GestureProcessingPlugin: frame={_frameCount}, prepared={_preparedFrameCount}, dropped={_droppedFrameCount}, detections={_landmarkDetectionCount}, format={context.Frame.PixelFormat}, resolution={context.Frame.Width}x{context.Frame.Height}");
+        if (_frameCount % RuntimeLogIntervalFrames == 0)
+        {
+            PluginLogger.Log(
+                $"GestureProcessingPlugin: frame={_frameCount}, prepared={_preparedFrameCount}, dropped={_droppedFrameCount}, detections={_landmarkDetectionCount}, format={context.Frame.PixelFormat}, resolution={context.Frame.Width}x{context.Frame.Height}");
+        }
     }
 
     public void OnEndCapture(PluginEndContext context)
@@ -216,7 +222,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
 
             if (frame != null)
             {
-                if (_graphRunner.IsRunning)
+                if (_graphRunner.IsRunning && !_mediaPipeFaulted)
                 {
                     try
                     {
@@ -233,7 +239,16 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     }
                     catch (Exception ex)
                     {
-                        PluginLogger.Log($"GestureProcessingPlugin: MediaPipe processing failed: {ex.Message}");
+                        _mediaPipeFaulted = true;
+                        PluginLogger.Log($"GestureProcessingPlugin: MediaPipe disabled after runtime error: {ex.Message}");
+                        try
+                        {
+                            _graphRunner.Stop();
+                        }
+                        catch
+                        {
+                            // ignore stop failures after fault
+                        }
                     }
                 }
 
