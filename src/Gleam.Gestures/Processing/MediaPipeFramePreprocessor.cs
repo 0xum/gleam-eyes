@@ -37,11 +37,6 @@ internal static class MediaPipeFramePreprocessor
                 resizedData);
         }
 
-        if (timestampNs % 120 == 0)
-        {
-             PluginLogger.Log($"MediaPipeFramePreprocessor: Processing format {pixelFormat}, size {frame.Width}x{frame.Height}");
-        }
-
         if (string.Equals(pixelFormat, "BGRA32", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(pixelFormat, "ARGB32", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(pixelFormat, "RGB32", StringComparison.OrdinalIgnoreCase))
@@ -65,12 +60,6 @@ internal static class MediaPipeFramePreprocessor
                 "RGB24",
                 timestampNs,
                 resizedData);
-        }
-
-        if (timestampNs % 300 == 0)
-        {
-            PluginLogger.Log(
-                $"GestureProcessingPlugin: format '{pixelFormat}' is not yet supported in MediaPipe preprocessing.");
         }
 
         return null;

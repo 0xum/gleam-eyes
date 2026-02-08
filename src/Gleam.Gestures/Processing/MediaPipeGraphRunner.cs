@@ -14,7 +14,6 @@ internal sealed class MediaPipeGraphRunner : IDisposable
 {
     private const string InputStreamName = "image";
     private const string OutputStreamName = "multi_hand_landmarks";
-    private const int NoDetectionLogInterval = 120;
     private const int MaxInFlightFrames = 2;
     private const int MaxNoResultFramesBeforeResync = 6;
     private static readonly string[] RequiredModelRelativePaths =
@@ -136,10 +135,6 @@ internal sealed class MediaPipeGraphRunner : IDisposable
                 PluginLogger.Log($"MediaPipeGraphRunner: Error submitting frame: {ex.Message}");
             }
         }
-        else if (_processedFrames % 60 == 0)
-        {
-            PluginLogger.Log($"MediaPipeGraphRunner: Skipping frame, inFlight={inFlight}");
-        }
 
         // Step 2: Collect results.
         // When QueueSize reflection is available, we know exactly how many packets
@@ -221,7 +216,6 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         if (sets.Length == 0)
         {
             _emptyFrames++;
-            MaybeLogNoDetections();
         }
 
         return new GestureLandmarkSnapshot(resultTimestampUs, sets);
@@ -481,17 +475,6 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         {
             _previousCurrentDirectory = null;
         }
-    }
-
-    private void MaybeLogNoDetections()
-    {
-        if (_processedFrames == 0 || _processedFrames % NoDetectionLogInterval != 0)
-        {
-            return;
-        }
-
-        PluginLogger.Log(
-            $"GestureProcessingPlugin: MediaPipe processed={_processedFrames}, no_landmarks={_emptyFrames}. If this stays high, verify .tflite assets and graph path.");
     }
 
     private int GetQueueSize()

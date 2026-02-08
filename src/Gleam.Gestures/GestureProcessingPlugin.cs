@@ -1,6 +1,7 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using Avalonia.Controls;
 using Avalonia.Threading;
 using Gleam.Engine.Frames;
 using Gleam.Engine.Overlays;
@@ -18,11 +19,16 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private const int MaxLandmarkAgFrames = 15;
     private const int EmptySnapshotClearThresholdFrames = 3;
     private static readonly long PreviewUpdateIntervalTicks = (long)(PreviewUpdateInterval.TotalSeconds * Stopwatch.Frequency);
-    private const int RuntimeLogIntervalFrames = 60;
     private const float NearHandsDistanceRatio = 0.18f;
     private const float MidHandsDistanceRatio = 0.35f;
     private const float PalmOpenMinRatio = 1.05f;
     private const float PalmOpenMaxRatio = 1.95f;
+    private const int InteractiveCircleCount = 4;
+    private const float InteractiveCircleMinRadiusRatio = 0.07f;
+    private const float InteractiveCircleMaxRadiusRatio = 0.12f;
+    private const float InteractiveCirclePaddingRatio = 0.05f;
+    private const float PinchCloseDistanceRatio = 0.95f;
+    private const float PinchReleaseDistanceMultiplier = 1.45f;
     private static readonly OverlayStroke LandmarkStroke = new(1.5f, new ColorRgba(80, 255, 160, 180));
     private static readonly OverlayStroke ConnectionStroke = new(2.2f, new ColorRgba(255, 180, 80, 210));
     private static readonly OverlayStroke HandsDistanceNearStroke = new(4f, new ColorRgba(80, 255, 120, 230));
@@ -31,6 +37,12 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private static readonly OverlayStroke PalmOpenCircleStroke = new(3f, new ColorRgba(90, 200, 255, 220));
     private static readonly OverlayFill PalmOpenCircleFill = new(new ColorRgba(90, 200, 255, 48));
     private static readonly OverlayFill LandmarkFill = new(new ColorRgba(80, 255, 160, 80));
+    private static readonly OverlayStroke InteractiveCircleIdleStroke = new(2.8f, new ColorRgba(180, 180, 255, 220));
+    private static readonly OverlayFill InteractiveCircleIdleFill = new(new ColorRgba(160, 160, 255, 42));
+    private static readonly OverlayStroke InteractiveCircleHoverStroke = new(3.4f, new ColorRgba(255, 220, 90, 240));
+    private static readonly OverlayFill InteractiveCircleHoverFill = new(new ColorRgba(255, 220, 90, 64));
+    private static readonly OverlayStroke InteractiveCircleDragStroke = new(4f, new ColorRgba(80, 255, 140, 245));
+    private static readonly OverlayFill InteractiveCircleDragFill = new(new ColorRgba(80, 255, 140, 92));
     private static readonly int[] FingerTipIndices = [4, 8, 12, 16, 20];
     private static readonly int[] PalmCenterIndices = [0, 5, 9, 13, 17];
     private static readonly int[] PalmBaseIndices = [5, 9, 13, 17];
@@ -66,6 +78,13 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private long _lastOverlayAgeUs;
     private int _framesSinceLastLandmarkUpdate;
     private int _consecutiveEmptySnapshots;
+    private readonly Random _random = new();
+    private readonly List<InteractiveCircle> _interactiveCircles = new();
+    private bool _interactiveCirclesInitialized;
+    private int _interactiveFrameWidth;
+    private int _interactiveFrameHeight;
+    private int? _activeDraggedCircleIndex;
+    private volatile bool _renderHandSkeletonOverlay;
 
     public string RuntimePerfLabel
     {
@@ -88,6 +107,14 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     }
 
     public string ToolbarActionLabel => "Open Gesture Debug";
+
+    public string SettingsTabTitle => "Gesture Settings";
+
+    public bool RenderHandSkeletonOverlay
+    {
+        get => _renderHandSkeletonOverlay;
+        set => _renderHandSkeletonOverlay = value;
+    }
 
     public bool CanOpenDebugWindow => _isCaptureRunning && IsEnabled && !_previewWindow.IsWindowOpen;
 
@@ -123,6 +150,33 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         RaiseToolbarStateChanged();
     }
 
+    public Control CreateSettingsView()
+    {
+        var toggle = new CheckBox
+        {
+            Content = "Render hand skeleton overlay",
+            IsChecked = RenderHandSkeletonOverlay
+        };
+
+        toggle.IsCheckedChanged += (_, _) =>
+        {
+            RenderHandSkeletonOverlay = toggle.IsChecked == true;
+        };
+
+        return new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Gesture plugin settings"
+                },
+                toggle
+            }
+        };
+    }
+
     public void OnStartCapture(PluginStartContext context)
     {
         PluginLogger.Log("GestureProcessingPlugin: Capture started (MediaPipe preprocessing).");
@@ -136,6 +190,9 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _lastOverlayAgeUs = 0;
         _nextPreviewRenderTick = 0;
         _consecutiveEmptySnapshots = 0;
+        _interactiveCirclesInitialized = false;
+        _interactiveCircles.Clear();
+        _activeDraggedCircleIndex = null;
         _isCaptureRunning = true;
         Interlocked.Exchange(ref _latestRawFrame, null);
         Volatile.Write(ref _latestLandmarks, GestureLandmarkSnapshot.Empty);
@@ -180,12 +237,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         {
             _previewSignal.Release();
         }
-
-        if (_frameCount % RuntimeLogIntervalFrames == 0)
-        {
-            PluginLogger.Log(
-                $"GestureProcessingPlugin: frame={_frameCount}, prepared={_preparedFrameCount}, dropped={_droppedFrameCount}, detections={_landmarkDetectionCount}, format={context.Frame.PixelFormat}, resolution={context.Frame.Width}x{context.Frame.Height}");
-        }
     }
 
     public void OnEndCapture(PluginEndContext context)
@@ -201,6 +252,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _previewLoopTask = null;
         _previewCts?.Dispose();
         _previewCts = null;
+        _activeDraggedCircleIndex = null;
 
         Dispatcher.UIThread.Post(() =>
         {
@@ -242,10 +294,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
             if (frame == null)
             {
                 _droppedFrameCount++;
-                if (_frameCount % 60 == 0)
-                {
-                    PluginLogger.Log($"GestureProcessingPlugin: frame preparation failed for format {rawFrame.PixelFormat}");
-                }
             }
             else
             {
@@ -268,12 +316,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                             ? inferenceElapsed
                             : ((previousAvg * 7) + inferenceElapsed) / 8;
                         Interlocked.Exchange(ref _avgInferenceElapsedTicks, nextAvg);
-
-                        if (_frameCount % 60 == 0)
-                        {
-                            var lastMs = TicksToMs(inferenceElapsed);
-                            PluginLogger.Log($"[Perf] MediaPipe Process: {lastMs:F2}ms");
-                        }
 
                         // MediaPipeGraphRunner retorna exatamente GestureLandmarkSnapshot.Empty
                         // quando não há pacote novo disponível neste ciclo.
@@ -335,10 +377,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     {
                         try
                         {
-            if (_frameCount % 120 == 0)
-            {
-                PluginLogger.Log($"GestureProcessingPlugin: PreviewLoop updating frame {frame.Width}x{frame.Height}");
-            }
             _previewWindow.UpdateFrame(frame);
                         }
                         catch (Exception ex)
@@ -358,97 +396,338 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
 
     private void DrawLandmarksOverlay(PluginFrameContext context)
     {
-        var snapshot = Volatile.Read(ref _latestLandmarks);
-
-        if (!snapshot.HasLandmarks)
-        {
-            return;
-        }
-
-        var age = Volatile.Read(ref _framesSinceLastLandmarkUpdate);
-        Interlocked.Increment(ref _framesSinceLastLandmarkUpdate);
-        Volatile.Write(ref _lastOverlayAgeUs, age);
-
-        if (age > MaxLandmarkAgFrames)
-        {
-            return;
-        }
-
+        var renderHandSkeletonOverlay = RenderHandSkeletonOverlay;
         var frameWidth = context.Frame.Width;
         var frameHeight = context.Frame.Height;
+        EnsureInteractiveCircles(frameWidth, frameHeight);
+
+        var snapshot = Volatile.Read(ref _latestLandmarks);
+        var handPinches = new List<HandPinchState>(snapshot.HasLandmarks ? snapshot.Sets.Count : 0);
+
         OverlayPoint? firstHandBase = null;
         OverlayPoint? secondHandBase = null;
 
-        Span<OverlayPoint> stackPoints = stackalloc OverlayPoint[21];
-
-        foreach (var set in snapshot.Sets)
+        if (snapshot.HasLandmarks)
         {
-            var pointsCount = set.Points.Count;
-            if (pointsCount == 0)
+            var age = Volatile.Read(ref _framesSinceLastLandmarkUpdate);
+            Interlocked.Increment(ref _framesSinceLastLandmarkUpdate);
+            Volatile.Write(ref _lastOverlayAgeUs, age);
+
+            if (age <= MaxLandmarkAgFrames)
             {
-                continue;
-            }
+                Span<OverlayPoint> stackPoints = stackalloc OverlayPoint[21];
+                var handIndex = 0;
 
-            if (pointsCount <= 21)
-            {
-                for (var i = 0; i < pointsCount; i++)
+                foreach (var set in snapshot.Sets)
                 {
-                    stackPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
-                }
-
-                RegisterHandBasePoint(ref firstHandBase, ref secondHandBase, stackPoints[0]);
-
-                foreach (var (a, b) in HandConnections)
-                {
-                    if (a >= pointsCount || b >= pointsCount)
+                    var pointsCount = set.Points.Count;
+                    if (pointsCount == 0)
                     {
+                        handIndex++;
                         continue;
                     }
 
-                    context.Scene.Add(new OverlayLine(stackPoints[a], stackPoints[b], ConnectionStroke));
+                    if (pointsCount <= 21)
+                    {
+                        for (var i = 0; i < pointsCount; i++)
+                        {
+                            stackPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
+                        }
+
+                        if (renderHandSkeletonOverlay)
+                        {
+                            RegisterHandBasePoint(ref firstHandBase, ref secondHandBase, stackPoints[0]);
+
+                            foreach (var (a, b) in HandConnections)
+                            {
+                                if (a >= pointsCount || b >= pointsCount)
+                                {
+                                    continue;
+                                }
+
+                                context.Scene.Add(new OverlayLine(stackPoints[a], stackPoints[b], ConnectionStroke));
+                            }
+
+                            for (var i = 0; i < pointsCount; i++)
+                            {
+                                context.Scene.Add(new OverlayCircle(stackPoints[i], 4f, LandmarkStroke, LandmarkFill));
+                            }
+
+                            DrawPalmOpennessCircle(context.Scene, stackPoints[..pointsCount]);
+                        }
+
+                        RegisterHandPinchState(handPinches, stackPoints[..pointsCount], handIndex);
+
+                        handIndex++;
+                        continue;
+                    }
+
+                    var heapPoints = new OverlayPoint[pointsCount];
+                    for (var i = 0; i < pointsCount; i++)
+                    {
+                        heapPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
+                    }
+
+                    if (renderHandSkeletonOverlay)
+                    {
+                        RegisterHandBasePoint(ref firstHandBase, ref secondHandBase, heapPoints[0]);
+
+                        foreach (var (a, b) in HandConnections)
+                        {
+                            if (a >= pointsCount || b >= pointsCount)
+                            {
+                                continue;
+                            }
+
+                            context.Scene.Add(new OverlayLine(heapPoints[a], heapPoints[b], ConnectionStroke));
+                        }
+
+                        for (var i = 0; i < pointsCount; i++)
+                        {
+                            context.Scene.Add(new OverlayCircle(heapPoints[i], 4f, LandmarkStroke, LandmarkFill));
+                        }
+
+                        DrawPalmOpennessCircle(context.Scene, heapPoints.AsSpan());
+                    }
+
+                    RegisterHandPinchState(handPinches, heapPoints.AsSpan(), handIndex);
+                    handIndex++;
                 }
 
-                for (var i = 0; i < pointsCount; i++)
+                if (renderHandSkeletonOverlay && firstHandBase is { } handA && secondHandBase is { } handB)
                 {
-                    context.Scene.Add(new OverlayCircle(stackPoints[i], 4f, LandmarkStroke, LandmarkFill));
+                    var stroke = SelectHandsDistanceStroke(handA, handB, frameWidth, frameHeight);
+                    context.Scene.Add(new OverlayLine(handA, handB, stroke));
                 }
+            }
+        }
 
-                DrawPalmOpennessCircle(context.Scene, stackPoints[..pointsCount]);
+        UpdateInteractiveCircles(handPinches, frameWidth, frameHeight);
+        DrawInteractiveCircles(context.Scene, handPinches);
+    }
 
+    private void EnsureInteractiveCircles(int frameWidth, int frameHeight)
+    {
+        if (_interactiveCirclesInitialized && frameWidth == _interactiveFrameWidth && frameHeight == _interactiveFrameHeight)
+        {
+            return;
+        }
+
+        _interactiveFrameWidth = frameWidth;
+        _interactiveFrameHeight = frameHeight;
+        _interactiveCirclesInitialized = true;
+        _activeDraggedCircleIndex = null;
+        _interactiveCircles.Clear();
+
+        if (frameWidth <= 0 || frameHeight <= 0)
+        {
+            return;
+        }
+
+        var minFrameSide = MathF.Max(1f, MathF.Min(frameWidth, frameHeight));
+        var minRadius = minFrameSide * InteractiveCircleMinRadiusRatio;
+        var maxRadius = minFrameSide * InteractiveCircleMaxRadiusRatio;
+        var padding = minFrameSide * InteractiveCirclePaddingRatio;
+
+        for (var i = 0; i < InteractiveCircleCount; i++)
+        {
+            var radius = NextFloat(minRadius, maxRadius);
+            var minX = radius + padding;
+            var maxX = frameWidth - radius - padding;
+            var minY = radius + padding;
+            var maxY = frameHeight - radius - padding;
+
+            var centerX = maxX > minX
+                ? NextFloat(minX, maxX)
+                : frameWidth * 0.5f;
+            var centerY = maxY > minY
+                ? NextFloat(minY, maxY)
+                : frameHeight * 0.5f;
+
+            _interactiveCircles.Add(new InteractiveCircle(OverlayPoint.FromPixels(centerX, centerY), radius));
+        }
+    }
+
+    private void DrawInteractiveCircles(OverlayScene scene, IReadOnlyList<HandPinchState> handPinches)
+    {
+        if (_interactiveCircles.Count == 0)
+        {
+            return;
+        }
+
+        int? hoveredCircle = null;
+        for (var i = 0; i < _interactiveCircles.Count; i++)
+        {
+            var circle = _interactiveCircles[i];
+            for (var handIndex = 0; handIndex < handPinches.Count; handIndex++)
+            {
+                var hand = handPinches[handIndex];
+                if (IsPointInsideCircle(hand.ThumbTip, circle) || IsPointInsideCircle(hand.IndexTip, circle))
+                {
+                    hoveredCircle = i;
+                    break;
+                }
+            }
+
+            if (hoveredCircle.HasValue)
+            {
+                break;
+            }
+        }
+
+        for (var i = 0; i < _interactiveCircles.Count; i++)
+        {
+            var circle = _interactiveCircles[i];
+
+            var (stroke, fill) = i == _activeDraggedCircleIndex
+                ? (InteractiveCircleDragStroke, InteractiveCircleDragFill)
+                : (i == hoveredCircle ? (InteractiveCircleHoverStroke, InteractiveCircleHoverFill) : (InteractiveCircleIdleStroke, InteractiveCircleIdleFill));
+
+            scene.Add(new OverlayCircle(circle.Center, circle.Radius, stroke, fill));
+        }
+    }
+
+    private void UpdateInteractiveCircles(IReadOnlyList<HandPinchState> handPinches, int frameWidth, int frameHeight)
+    {
+        if (_interactiveCircles.Count == 0)
+        {
+            _activeDraggedCircleIndex = null;
+            return;
+        }
+
+        if (_activeDraggedCircleIndex is { } activeCircleIndex)
+        {
+            if (activeCircleIndex < 0 || activeCircleIndex >= _interactiveCircles.Count)
+            {
+                _activeDraggedCircleIndex = null;
+                return;
+            }
+
+            var activeCircle = _interactiveCircles[activeCircleIndex];
+            var dragHand = FindClosestPinchingHand(handPinches, activeCircle.Center, useReleaseThreshold: true);
+            if (dragHand is { } handState)
+            {
+                activeCircle.Center = ClampToFrame(handState.PinchCenter, frameWidth, frameHeight, activeCircle.Radius);
+                return;
+            }
+
+            _activeDraggedCircleIndex = null;
+        }
+
+        for (var handListIndex = 0; handListIndex < handPinches.Count; handListIndex++)
+        {
+            var hand = handPinches[handListIndex];
+            if (hand.PinchDistance > hand.PinchCloseThreshold)
+            {
                 continue;
             }
 
-            var heapPoints = new OverlayPoint[pointsCount];
-            for (var i = 0; i < pointsCount; i++)
+            for (var circleIndex = 0; circleIndex < _interactiveCircles.Count; circleIndex++)
             {
-                heapPoints[i] = ToOverlayPoint(set.Points[i], frameWidth, frameHeight);
-            }
+                var circle = _interactiveCircles[circleIndex];
+                var thumbInside = IsPointInsideCircle(hand.ThumbTip, circle);
+                var indexInside = IsPointInsideCircle(hand.IndexTip, circle);
 
-            RegisterHandBasePoint(ref firstHandBase, ref secondHandBase, heapPoints[0]);
-
-            foreach (var (a, b) in HandConnections)
-            {
-                if (a >= pointsCount || b >= pointsCount)
+                if (!thumbInside && !indexInside)
                 {
-                    continue;
+                    var pinchInside = IsPointInsideCircle(hand.PinchCenter, circle);
+                    if (!pinchInside)
+                    {
+                        continue;
+                    }
                 }
 
-                context.Scene.Add(new OverlayLine(heapPoints[a], heapPoints[b], ConnectionStroke));
+                _activeDraggedCircleIndex = circleIndex;
+                circle.Center = ClampToFrame(hand.PinchCenter, frameWidth, frameHeight, circle.Radius);
+                return;
             }
-
-            for (var i = 0; i < pointsCount; i++)
-            {
-                context.Scene.Add(new OverlayCircle(heapPoints[i], 4f, LandmarkStroke, LandmarkFill));
-            }
-
-            DrawPalmOpennessCircle(context.Scene, heapPoints.AsSpan());
         }
+    }
 
-        if (firstHandBase is { } handA && secondHandBase is { } handB)
+    private static HandPinchState? FindClosestPinchingHand(
+        IReadOnlyList<HandPinchState> handPinches,
+        OverlayPoint reference,
+        bool useReleaseThreshold)
+    {
+        HandPinchState? best = null;
+        var bestDistanceSq = float.MaxValue;
+
+        for (var i = 0; i < handPinches.Count; i++)
         {
-            var stroke = SelectHandsDistanceStroke(handA, handB, frameWidth, frameHeight);
-            context.Scene.Add(new OverlayLine(handA, handB, stroke));
+            var hand = handPinches[i];
+            var threshold = useReleaseThreshold ? hand.PinchReleaseThreshold : hand.PinchCloseThreshold;
+            if (hand.PinchDistance > threshold)
+            {
+                continue;
+            }
+
+            var dx = hand.PinchCenter.X - reference.X;
+            var dy = hand.PinchCenter.Y - reference.Y;
+            var distanceSq = (dx * dx) + (dy * dy);
+            if (distanceSq >= bestDistanceSq)
+            {
+                continue;
+            }
+
+            bestDistanceSq = distanceSq;
+            best = hand;
         }
+
+        return best;
+    }
+
+    private void RegisterHandPinchState(List<HandPinchState> handPinches, ReadOnlySpan<OverlayPoint> points, int handIndex)
+    {
+        if (points.Length <= 8)
+        {
+            return;
+        }
+
+        var thumbTip = points[4];
+        var indexTip = points[8];
+        var pinchDx = thumbTip.X - indexTip.X;
+        var pinchDy = thumbTip.Y - indexTip.Y;
+        var pinchDistance = MathF.Sqrt((pinchDx * pinchDx) + (pinchDy * pinchDy));
+        var pinchCenter = OverlayPoint.FromPixels((thumbTip.X + indexTip.X) * 0.5f, (thumbTip.Y + indexTip.Y) * 0.5f);
+
+        var palmCenter = AveragePoints(points, PalmCenterIndices);
+        var palmBaseDistance = AverageDistanceToCenter(points, PalmBaseIndices, palmCenter);
+        if (palmBaseDistance <= 0.001f)
+        {
+            return;
+        }
+
+        var closeThreshold = Math.Max(16f, palmBaseDistance * PinchCloseDistanceRatio);
+        var releaseThreshold = closeThreshold * PinchReleaseDistanceMultiplier;
+        handPinches.Add(new HandPinchState(handIndex, thumbTip, indexTip, pinchCenter, pinchDistance, closeThreshold, releaseThreshold));
+    }
+
+    private static OverlayPoint ClampToFrame(OverlayPoint point, int frameWidth, int frameHeight, float margin)
+    {
+        var minX = Math.Max(0f, margin);
+        var maxX = Math.Max(minX, frameWidth - margin);
+        var minY = Math.Max(0f, margin);
+        var maxY = Math.Max(minY, frameHeight - margin);
+        var x = Math.Clamp(point.X, minX, maxX);
+        var y = Math.Clamp(point.Y, minY, maxY);
+        return OverlayPoint.FromPixels(x, y);
+    }
+
+    private static bool IsPointInsideCircle(OverlayPoint point, InteractiveCircle circle)
+    {
+        var dx = point.X - circle.Center.X;
+        var dy = point.Y - circle.Center.Y;
+        return ((dx * dx) + (dy * dy)) <= (circle.Radius * circle.Radius);
+    }
+
+    private float NextFloat(float min, float max)
+    {
+        if (max <= min)
+        {
+            return min;
+        }
+
+        return min + ((float)_random.NextDouble() * (max - min));
     }
 
     private static void RegisterHandBasePoint(ref OverlayPoint? firstHandBase, ref OverlayPoint? secondHandBase, OverlayPoint handBase)
@@ -566,5 +845,27 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
 
         return (ticks * 1000d) / Stopwatch.Frequency;
     }
+
+    private sealed class InteractiveCircle
+    {
+        public InteractiveCircle(OverlayPoint center, float radius)
+        {
+            Center = center;
+            Radius = radius;
+        }
+
+        public OverlayPoint Center { get; set; }
+
+        public float Radius { get; }
+    }
+
+    private readonly record struct HandPinchState(
+        int HandIndex,
+        OverlayPoint ThumbTip,
+        OverlayPoint IndexTip,
+        OverlayPoint PinchCenter,
+        float PinchDistance,
+        float PinchCloseThreshold,
+        float PinchReleaseThreshold);
 
 }
