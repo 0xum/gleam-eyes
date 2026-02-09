@@ -15,7 +15,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private const string InputStreamName = "image";
     private const string OutputStreamName = "multi_hand_landmarks";
     private const int MaxInFlightFrames = 2;
-    private const int MaxNoResultFramesBeforeResync = 6;
+    private const int RestartAfterNoResultFrames = 45;
     private static readonly string[] RequiredModelRelativePaths =
     [
         "mediapipe/modules/hand_landmark/hand_landmark_full.tflite",
@@ -60,6 +60,9 @@ internal sealed class MediaPipeGraphRunner : IDisposable
     private long _submittedFrames;
     private long _receivedResults;
     private long _framesSinceLastResult;
+    private long _lastSubmittedTimestampUs;
+    private long _lastResultTimestampUs;
+    private int _lastObservedQueueSize;
     private string? _previousCurrentDirectory;
 
     public bool IsRunning => _isRunning;
@@ -96,6 +99,9 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         _submittedFrames = 0;
         _receivedResults = 0;
         _framesSinceLastResult = 0;
+        _lastSubmittedTimestampUs = 0;
+        _lastResultTimestampUs = 0;
+        _lastObservedQueueSize = 0;
         _isRunning = true;
         PluginLogger.Log($"GestureProcessingPlugin: QueueSize method available: {_hasQueueSizeMethod}");
         PluginLogger.Log("GestureProcessingPlugin: MediaPipe graph started.");
@@ -110,34 +116,28 @@ internal sealed class MediaPipeGraphRunner : IDisposable
 
         _processedFrames++;
 
-        // Step 1: Submit the frame.
-        // O stream "multi_hand_landmarks" pode ficar sem emitir pacotes por alguns ciclos.
-        // Se limitarmos estritamente por in-flight usando submitted/received, podemos entrar
-        // em starvation quando o capture inicia sem mão visível. Fazemos um resync leve para
-        // manter fluidez e recuperar detecção quando a mão entra depois.
-        var inFlight = _submittedFrames - _receivedResults;
-        var forceSubmitDuringStartupStall =
-            _framesSinceLastResult >= MaxNoResultFramesBeforeResync &&
-            (_framesSinceLastResult % 2 == 0);
-
-        if (_framesSinceLastResult >= MaxNoResultFramesBeforeResync && inFlight >= MaxInFlightFrames)
+        // Step 1: bounded in-flight submit.
+        // Se ficar muito tempo sem resultado, reinicia o graph para limpar estado interno
+        // e evitar backlog/counters inconsistentes.
+        if (_framesSinceLastResult >= RestartAfterNoResultFrames)
         {
-            // Sem resultados por vários frames, submitted/received pode ficar
-            // desbalanceado porque o stream de landmarks não emite pacote em
-            // todos os ciclos. Re-sincroniza contadores para evitar starvation.
-            _receivedResults = _submittedFrames;
-            inFlight = 0;
+            PluginLogger.Log($"MediaPipeGraphRunner: restarting graph after {_framesSinceLastResult} frames without results.");
+            Restart();
+            return GestureLandmarkSnapshot.Empty;
         }
 
-        if (inFlight < MaxInFlightFrames || forceSubmitDuringStartupStall)
+        var inFlight = _submittedFrames - _receivedResults;
+        if (inFlight < MaxInFlightFrames)
         {
             try
             {
                 using var imageFrame = CreateImageFrame(frame);
-                using var timestamp = new Timestamp(frame.TimestampNs / 1000);
+                var frameTimestampUs = frame.TimestampNs / 1000;
+                using var timestamp = new Timestamp(frameTimestampUs);
                 using var packet = new ImageFramePacket(imageFrame, timestamp);
                 _graph.AddPacketToInputStream(InputStreamName, packet).AssertOk();
                 _submittedFrames++;
+                _lastSubmittedTimestampUs = frameTimestampUs;
             }
             catch (Exception ex)
             {
@@ -158,6 +158,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         {
             // Safe: QueueSize tells us exactly how many are ready (non-blocking).
             var drainCount = GetQueueSize();
+            _lastObservedQueueSize = drainCount;
             for (var i = 0; i < drainCount; i++)
             {
                 var pkt = new NormalizedLandmarkListVectorPacket();
@@ -176,6 +177,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         }
         else
         {
+            _lastObservedQueueSize = 0;
             // Fallback: no QueueSize. Next() blocks until a packet arrives.
             // Only call it if we know at least one result is expected.
             if (_submittedFrames > _receivedResults)
@@ -198,6 +200,7 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         {
             try
             {
+                _lastResultTimestampUs = latestResult.Timestamp().Microseconds;
                 _framesSinceLastResult = 0;
                 return CreateSnapshot(latestResult);
             }
@@ -212,19 +215,43 @@ internal sealed class MediaPipeGraphRunner : IDisposable
         return GestureLandmarkSnapshot.Empty;
     }
 
+    public RunnerStats GetStats()
+    {
+        return new RunnerStats(
+            _submittedFrames,
+            _receivedResults,
+            _submittedFrames - _receivedResults,
+            _framesSinceLastResult,
+            _lastObservedQueueSize,
+            _lastSubmittedTimestampUs,
+            _lastResultTimestampUs);
+    }
+
     private GestureLandmarkSnapshot CreateSnapshot(NormalizedLandmarkListVectorPacket packet)
     {
         var resultTimestampUs = packet.Timestamp().Microseconds;
-        var sets = packet.Get()
-            .Select(landmarkList => new GestureLandmarkSet(
-                landmarkList.Landmark
-                    .Select(landmark => new GestureLandmarkPoint(landmark.X, landmark.Y, landmark.Z))
-                    .ToArray()))
-            .ToArray();
-
-        if (sets.Length == 0)
+        var landmarkLists = packet.Get();
+        var setsCount = landmarkLists.Count;
+        if (setsCount == 0)
         {
             _emptyFrames++;
+            return new GestureLandmarkSnapshot(resultTimestampUs, Array.Empty<GestureLandmarkSet>());
+        }
+
+        var sets = new GestureLandmarkSet[setsCount];
+        for (var i = 0; i < setsCount; i++)
+        {
+            var landmarkList = landmarkLists[i];
+            var pointsCount = landmarkList.Landmark.Count;
+            var points = new GestureLandmarkPoint[pointsCount];
+
+            for (var j = 0; j < pointsCount; j++)
+            {
+                var landmark = landmarkList.Landmark[j];
+                points[j] = new GestureLandmarkPoint(landmark.X, landmark.Y, landmark.Z);
+            }
+
+            sets[i] = new GestureLandmarkSet(points);
         }
 
         return new GestureLandmarkSnapshot(resultTimestampUs, sets);
@@ -256,6 +283,12 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             _isRunning = false;
             RestorePreviousWorkingDirectory();
         }
+    }
+
+    public void Restart()
+    {
+        Stop();
+        Start();
     }
 
     public void Dispose()
@@ -508,5 +541,14 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             return 0;
         }
     }
+
+    internal readonly record struct RunnerStats(
+        long SubmittedFrames,
+        long ReceivedResults,
+        long InFlightFrames,
+        long FramesSinceLastResult,
+        int PollerQueueSize,
+        long LastSubmittedTimestampUs,
+        long LastResultTimestampUs);
 
 }

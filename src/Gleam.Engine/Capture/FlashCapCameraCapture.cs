@@ -128,10 +128,33 @@ public sealed class FlashCapCameraCapture : ICameraCapture
             .Where(c => c.PixelFormat == PixelFormats.ARGB32
                         || c.PixelFormat == PixelFormats.RGB32
                         || c.PixelFormat == PixelFormats.RGB24)
-            .OrderBy(c => c.Width * c.Height)
+            .OrderByDescending(c => c.PixelFormat == PixelFormats.RGB24
+                ? 3
+                : c.PixelFormat == PixelFormats.RGB32
+                    ? 2
+                    : c.PixelFormat == PixelFormats.ARGB32
+                        ? 1
+                        : 0)
+            .ThenByDescending(c => c.Width * c.Height)
             .ToList();
 
         var target = preferredFormats
+            .FirstOrDefault(c => c.Width == 1280 && c.Height == 720);
+
+        if (target != null)
+        {
+            return target;
+        }
+
+        target = preferredFormats
+            .FirstOrDefault(c => c.Width == 960 && c.Height == 540);
+
+        if (target != null)
+        {
+            return target;
+        }
+
+        target = preferredFormats
             .FirstOrDefault(c => c.Width == 640 && c.Height == 480);
 
         if (target != null)
@@ -140,7 +163,9 @@ public sealed class FlashCapCameraCapture : ICameraCapture
         }
 
         target = preferredFormats
-            .FirstOrDefault(c => c.Width <= 640 && c.Height <= 480);
+            .Where(c => c.Width <= 1280 && c.Height <= 720)
+            .OrderByDescending(c => c.Width * c.Height)
+            .FirstOrDefault();
 
         if (target != null)
         {

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Gleam.Engine.Frames;
 using Gleam.Engine.Processing;
 using Gleam.Gestures.Models;
@@ -9,8 +8,16 @@ namespace Gleam.Gestures.Processing;
 internal static class MediaPipeFramePreprocessor
 {
     private const bool DownscaleForInference = true;
-    private const int InferenceMaxWidth = 640;
-    private const int InferenceMaxHeight = 480;
+    private static int _inferenceMaxWidth = 1280;
+    private static int _inferenceMaxHeight = 720;
+
+    public static void SetInferenceDownscaleTarget(int maxWidth, int maxHeight)
+    {
+        var width = Math.Max(1, maxWidth);
+        var height = Math.Max(1, maxHeight);
+        System.Threading.Volatile.Write(ref _inferenceMaxWidth, width);
+        System.Threading.Volatile.Write(ref _inferenceMaxHeight, height);
+    }
 
     public static PreparedFrame? Prepare(PluginFrameContext context)
     {
@@ -69,30 +76,14 @@ internal static class MediaPipeFramePreprocessor
     {
         var destination = new byte[width * height * 3];
 
-        var srcHandle = GCHandle.Alloc(source, GCHandleType.Pinned);
-        var dstHandle = GCHandle.Alloc(destination, GCHandleType.Pinned);
-        try
+        var pixelCount = width * height;
+        for (var i = 0; i < pixelCount; i++)
         {
-            unsafe
-            {
-                byte* srcPtr = (byte*)srcHandle.AddrOfPinnedObject();
-                byte* dstPtr = (byte*)dstHandle.AddrOfPinnedObject();
-
-                var pixelCount = width * height;
-                for (var i = 0; i < pixelCount; i++)
-                {
-                    var srcIdx = i << 2;
-                    var dstIdx = i * 3;
-                    dstPtr[dstIdx] = srcPtr[srcIdx + 2];     // R
-                    dstPtr[dstIdx + 1] = srcPtr[srcIdx + 1]; // G
-                    dstPtr[dstIdx + 2] = srcPtr[srcIdx];     // B
-                }
-            }
-        }
-        finally
-        {
-            srcHandle.Free();
-            dstHandle.Free();
+            var srcIdx = i << 2;
+            var dstIdx = i * 3;
+            destination[dstIdx] = source[srcIdx + 2];     // R
+            destination[dstIdx + 1] = source[srcIdx + 1]; // G
+            destination[dstIdx + 2] = source[srcIdx];     // B
         }
 
         return destination;
@@ -121,16 +112,26 @@ internal static class MediaPipeFramePreprocessor
                 canvas.DrawBitmap(decoded, 0, 0);
             }
 
-            var byteCount = normalized.ByteCount;
             var pixelPtr = normalized.GetPixels();
-            if (pixelPtr == IntPtr.Zero || byteCount <= 0)
+            if (pixelPtr == IntPtr.Zero)
             {
                 return false;
             }
 
-            var bgraData = new byte[byteCount];
-            Marshal.Copy(pixelPtr, bgraData, 0, byteCount);
-            rgbData = ConvertBgraLikeToRgb24(bgraData, width, height);
+            rgbData = new byte[width * height * 3];
+            unsafe
+            {
+                var src = (byte*)pixelPtr.ToPointer();
+                for (var i = 0; i < width * height; i++)
+                {
+                    var srcIdx = i << 2;
+                    var dstIdx = i * 3;
+                    rgbData[dstIdx] = src[srcIdx + 2];
+                    rgbData[dstIdx + 1] = src[srcIdx + 1];
+                    rgbData[dstIdx + 2] = src[srcIdx];
+                }
+            }
+
             return true;
         }
         catch
@@ -146,8 +147,10 @@ internal static class MediaPipeFramePreprocessor
             return (sourceWidth, sourceHeight, source);
         }
 
-        var widthScale = InferenceMaxWidth / (float)sourceWidth;
-        var heightScale = InferenceMaxHeight / (float)sourceHeight;
+        var inferenceMaxWidth = System.Threading.Volatile.Read(ref _inferenceMaxWidth);
+        var inferenceMaxHeight = System.Threading.Volatile.Read(ref _inferenceMaxHeight);
+        var widthScale = inferenceMaxWidth / (float)sourceWidth;
+        var heightScale = inferenceMaxHeight / (float)sourceHeight;
         var scale = Math.Min(1f, Math.Min(widthScale, heightScale));
 
         if (scale >= 1f)
@@ -164,39 +167,22 @@ internal static class MediaPipeFramePreprocessor
     {
         var destination = new byte[targetWidth * targetHeight * 3];
 
-        var srcHandle = GCHandle.Alloc(source, GCHandleType.Pinned);
-        var dstHandle = GCHandle.Alloc(destination, GCHandleType.Pinned);
-
-        try
+        for (var y = 0; y < targetHeight; y++)
         {
-            unsafe
+            var sourceY = y * sourceHeight / targetHeight;
+            var dstRowOffset = y * targetWidth * 3;
+            var srcRowOffset = sourceY * sourceWidth * 3;
+
+            for (var x = 0; x < targetWidth; x++)
             {
-                byte* srcPtr = (byte*)srcHandle.AddrOfPinnedObject();
-                byte* dstPtr = (byte*)dstHandle.AddrOfPinnedObject();
+                var sourceX = x * sourceWidth / targetWidth;
+                var srcIdx = srcRowOffset + sourceX * 3;
+                var dstIdx = dstRowOffset + x * 3;
 
-                for (var y = 0; y < targetHeight; y++)
-                {
-                    var sourceY = y * sourceHeight / targetHeight;
-                    var dstRowOffset = y * targetWidth * 3;
-                    var srcRowOffset = sourceY * sourceWidth * 3;
-
-                    for (var x = 0; x < targetWidth; x++)
-                    {
-                        var sourceX = x * sourceWidth / targetWidth;
-                        var srcIdx = srcRowOffset + sourceX * 3;
-                        var dstIdx = dstRowOffset + x * 3;
-
-                        dstPtr[dstIdx] = srcPtr[srcIdx];
-                        dstPtr[dstIdx + 1] = srcPtr[srcIdx + 1];
-                        dstPtr[dstIdx + 2] = srcPtr[srcIdx + 2];
-                    }
-                }
+                destination[dstIdx] = source[srcIdx];
+                destination[dstIdx + 1] = source[srcIdx + 1];
+                destination[dstIdx + 2] = source[srcIdx + 2];
             }
-        }
-        finally
-        {
-            srcHandle.Free();
-            dstHandle.Free();
         }
 
         return destination;

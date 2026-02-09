@@ -73,9 +73,14 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private int _lastDetectedHands;
     private int _lastDetectedPoints;
     private bool _mediaPipeFaulted;
+    private long _lastPreprocessElapsedTicks;
+    private long _avgPreprocessElapsedTicks;
     private long _lastInferenceElapsedTicks;
     private long _avgInferenceElapsedTicks;
+    private long _lastResultAgeMs;
+    private long _avgResultAgeMs;
     private long _lastOverlayAgeUs;
+    private long _debugTickCounter;
     private int _framesSinceLastLandmarkUpdate;
     private int _consecutiveEmptySnapshots;
     private readonly Random _random = new();
@@ -84,7 +89,9 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     private int _interactiveFrameWidth;
     private int _interactiveFrameHeight;
     private int? _activeDraggedCircleIndex;
-    private volatile bool _renderHandSkeletonOverlay;
+    private volatile bool _renderHandSkeletonOverlay = true;
+    private volatile bool _enableDiagnosticLogs;
+    private volatile bool _useVgaDownscale;
 
     public string RuntimePerfLabel
     {
@@ -92,10 +99,19 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         {
             var lastMs = TicksToMs(Volatile.Read(ref _lastInferenceElapsedTicks));
             var avgMs = TicksToMs(Volatile.Read(ref _avgInferenceElapsedTicks));
+            var prepLastMs = TicksToMs(Volatile.Read(ref _lastPreprocessElapsedTicks));
+            var prepAvgMs = TicksToMs(Volatile.Read(ref _avgPreprocessElapsedTicks));
+            var resultAgeMs = Volatile.Read(ref _lastResultAgeMs);
+            var resultAgeAvgMs = Volatile.Read(ref _avgResultAgeMs);
             var overlayAgeFrames = Volatile.Read(ref _lastOverlayAgeUs);
             var hands = Volatile.Read(ref _lastDetectedHands);
             var points = Volatile.Read(ref _lastDetectedPoints);
-            return $"Infer={lastMs:F1}ms(avg {avgMs:F1}) age={overlayAgeFrames}f prep={_preparedFrameCount} drop={_droppedFrameCount} detFrames={_landmarkDetectionCount} hands={hands} points={points}";
+            var runnerStats = _graphRunner.GetStats();
+            var resultLagMs = runnerStats.LastSubmittedTimestampUs > 0 && runnerStats.LastResultTimestampUs > 0
+                ? Math.Max(0, (runnerStats.LastSubmittedTimestampUs - runnerStats.LastResultTimestampUs) / 1000)
+                : 0;
+
+            return $"Prep={prepLastMs:F1}ms(avg {prepAvgMs:F1}) Infer={lastMs:F1}ms(avg {avgMs:F1}) resAge={resultAgeMs}ms(avg {resultAgeAvgMs}) lag={resultLagMs}ms inF={runnerStats.InFlightFrames} q={runnerStats.PollerQueueSize} noRes={runnerStats.FramesSinceLastResult} age={overlayAgeFrames}f prepN={_preparedFrameCount} drop={_droppedFrameCount} det={_landmarkDetectionCount} hands={hands} points={points}";
         }
     }
 
@@ -114,6 +130,22 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
     {
         get => _renderHandSkeletonOverlay;
         set => _renderHandSkeletonOverlay = value;
+    }
+
+    public bool EnableDiagnosticLogs
+    {
+        get => _enableDiagnosticLogs;
+        set => _enableDiagnosticLogs = value;
+    }
+
+    public bool UseVgaDownscale
+    {
+        get => _useVgaDownscale;
+        set
+        {
+            _useVgaDownscale = value;
+            ApplyDownscalePreference();
+        }
     }
 
     public bool CanOpenDebugWindow => _isCaptureRunning && IsEnabled && !_previewWindow.IsWindowOpen;
@@ -158,9 +190,31 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
             IsChecked = RenderHandSkeletonOverlay
         };
 
+        var logsToggle = new CheckBox
+        {
+            Content = "Enable diagnostic logs (GESTURE_TICK)",
+            IsChecked = EnableDiagnosticLogs
+        };
+
+        var downscaleToggle = new CheckBox
+        {
+            Content = "Use VGA downscale for inference (640x480)",
+            IsChecked = UseVgaDownscale
+        };
+
         toggle.IsCheckedChanged += (_, _) =>
         {
             RenderHandSkeletonOverlay = toggle.IsChecked == true;
+        };
+
+        logsToggle.IsCheckedChanged += (_, _) =>
+        {
+            EnableDiagnosticLogs = logsToggle.IsChecked == true;
+        };
+
+        downscaleToggle.IsCheckedChanged += (_, _) =>
+        {
+            UseVgaDownscale = downscaleToggle.IsChecked == true;
         };
 
         return new StackPanel
@@ -172,13 +226,16 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                 {
                     Text = "Gesture plugin settings"
                 },
-                toggle
+                toggle,
+                logsToggle,
+                downscaleToggle
             }
         };
     }
 
     public void OnStartCapture(PluginStartContext context)
     {
+        ApplyDownscalePreference();
         PluginLogger.Log("GestureProcessingPlugin: Capture started (MediaPipe preprocessing).");
         _frameCount = 0;
         _preparedFrameCount = 0;
@@ -187,7 +244,14 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _lastDetectedHands = 0;
         _lastDetectedPoints = 0;
         _mediaPipeFaulted = false;
+        _lastPreprocessElapsedTicks = 0;
+        _avgPreprocessElapsedTicks = 0;
+        _lastInferenceElapsedTicks = 0;
+        _avgInferenceElapsedTicks = 0;
+        _lastResultAgeMs = 0;
+        _avgResultAgeMs = 0;
         _lastOverlayAgeUs = 0;
+        _debugTickCounter = 0;
         _nextPreviewRenderTick = 0;
         _consecutiveEmptySnapshots = 0;
         _interactiveCirclesInitialized = false;
@@ -247,6 +311,24 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         _isCaptureRunning = false;
         _previewWindow.EndSession();
         _previewCts?.Cancel();
+
+        var previewTask = _previewLoopTask;
+        if (previewTask != null)
+        {
+            try
+            {
+                previewTask.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                // expected on shutdown
+            }
+            catch (Exception ex)
+            {
+                PluginLogger.Log($"GestureProcessingPlugin: preview loop shutdown warning: {ex.Message}");
+            }
+        }
+
         _graphRunner.Stop();
 
         _previewLoopTask = null;
@@ -289,7 +371,15 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                 continue;
             }
 
+            var preprocessStart = Stopwatch.GetTimestamp();
             frame = MediaPipeFramePreprocessor.Prepare(rawFrame);
+            var preprocessElapsed = Stopwatch.GetTimestamp() - preprocessStart;
+            Interlocked.Exchange(ref _lastPreprocessElapsedTicks, preprocessElapsed);
+            var prevPrepAvg = Volatile.Read(ref _avgPreprocessElapsedTicks);
+            var nextPrepAvg = prevPrepAvg == 0
+                ? preprocessElapsed
+                : ((prevPrepAvg * 7) + preprocessElapsed) / 8;
+            Interlocked.Exchange(ref _avgPreprocessElapsedTicks, nextPrepAvg);
 
             if (frame == null)
             {
@@ -302,6 +392,9 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
 
             if (frame != null)
             {
+                var tickId = Interlocked.Increment(ref _debugTickCounter);
+                var tickDetectionState = "NoPacket";
+
                 if (_graphRunner.IsRunning && !_mediaPipeFaulted)
                 {
                     try
@@ -324,6 +417,16 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                         {
                             if (snapshot.HasLandmarks)
                             {
+                                tickDetectionState = "Landmarks";
+                                var frameTimestampUs = frame.TimestampNs / 1000;
+                                var resultAgeMs = Math.Max(0, (frameTimestampUs - snapshot.TimestampUs) / 1000);
+                                Interlocked.Exchange(ref _lastResultAgeMs, resultAgeMs);
+                                var prevAgeAvg = Volatile.Read(ref _avgResultAgeMs);
+                                var nextAgeAvg = prevAgeAvg == 0
+                                    ? resultAgeMs
+                                    : ((prevAgeAvg * 7) + resultAgeMs) / 8;
+                                Interlocked.Exchange(ref _avgResultAgeMs, nextAgeAvg);
+
                                 Volatile.Write(ref _latestLandmarks, snapshot);
                                 Volatile.Write(ref _framesSinceLastLandmarkUpdate, 0);
                                 Volatile.Write(ref _consecutiveEmptySnapshots, 0);
@@ -341,11 +444,13 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                             }
                             else
                             {
+                                tickDetectionState = "EmptyPacket";
                                 // Resultado explícito sem landmarks: só limpamos após alguns
                                 // vazios consecutivos para reduzir piscadas por perdas pontuais.
                                 var emptyStreak = Interlocked.Increment(ref _consecutiveEmptySnapshots);
                                 if (emptyStreak >= EmptySnapshotClearThresholdFrames)
                                 {
+                                    Interlocked.Exchange(ref _lastResultAgeMs, 0);
                                     Volatile.Write(ref _latestLandmarks, GestureLandmarkSnapshot.Empty);
                                     Volatile.Write(ref _lastDetectedHands, 0);
                                     Volatile.Write(ref _lastDetectedPoints, 0);
@@ -355,6 +460,7 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                     }
                     catch (Exception ex)
                     {
+                        tickDetectionState = "GraphError";
                         _mediaPipeFaulted = true;
                         PluginLogger.Log($"GestureProcessingPlugin: MediaPipe disabled after runtime error: {ex.Message}");
                         try
@@ -384,6 +490,24 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                             PluginLogger.Log($"GestureProcessingPlugin: failed to update preview window: {ex.Message}");
                         }
                     }, DispatcherPriority.Background);
+                }
+
+                var runnerStats = _graphRunner.GetStats();
+                var prepMs = TicksToMs(Volatile.Read(ref _lastPreprocessElapsedTicks));
+                var inferMs = TicksToMs(Volatile.Read(ref _lastInferenceElapsedTicks));
+                var prepAvgMs = TicksToMs(Volatile.Read(ref _avgPreprocessElapsedTicks));
+                var inferAvgMs = TicksToMs(Volatile.Read(ref _avgInferenceElapsedTicks));
+                var resultAgeMsNow = Volatile.Read(ref _lastResultAgeMs);
+                var resultLagMs = runnerStats.LastSubmittedTimestampUs > 0 && runnerStats.LastResultTimestampUs > 0
+                    ? Math.Max(0, (runnerStats.LastSubmittedTimestampUs - runnerStats.LastResultTimestampUs) / 1000)
+                    : 0;
+                var handsNow = Volatile.Read(ref _lastDetectedHands);
+                var pointsNow = Volatile.Read(ref _lastDetectedPoints);
+
+                if (EnableDiagnosticLogs)
+                {
+                    PluginLogger.Log(
+                        $"GESTURE_TICK tick={tickId} frameTsUs={frame.TimestampNs / 1000} state={tickDetectionState} prepMs={prepMs:F2} prepAvgMs={prepAvgMs:F2} inferMs={inferMs:F2} inferAvgMs={inferAvgMs:F2} resultAgeMs={resultAgeMsNow} lagMs={resultLagMs} inFlight={runnerStats.InFlightFrames} queue={runnerStats.PollerQueueSize} noResultFrames={runnerStats.FramesSinceLastResult} submitted={runnerStats.SubmittedFrames} received={runnerStats.ReceivedResults} hands={handsNow} points={pointsNow} dropped={_droppedFrameCount}");
                 }
             }
         }
@@ -844,6 +968,17 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
         }
 
         return (ticks * 1000d) / Stopwatch.Frequency;
+    }
+
+    private void ApplyDownscalePreference()
+    {
+        if (UseVgaDownscale)
+        {
+            MediaPipeFramePreprocessor.SetInferenceDownscaleTarget(640, 480);
+            return;
+        }
+
+        MediaPipeFramePreprocessor.SetInferenceDownscaleTarget(1280, 720);
     }
 
     private sealed class InteractiveCircle
