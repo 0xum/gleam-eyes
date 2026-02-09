@@ -120,6 +120,15 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             _framesSinceLastResult >= MaxNoResultFramesBeforeResync &&
             (_framesSinceLastResult % 2 == 0);
 
+        if (_framesSinceLastResult >= MaxNoResultFramesBeforeResync && inFlight >= MaxInFlightFrames)
+        {
+            // Sem resultados por vários frames, submitted/received pode ficar
+            // desbalanceado porque o stream de landmarks não emite pacote em
+            // todos os ciclos. Re-sincroniza contadores para evitar starvation.
+            _receivedResults = _submittedFrames;
+            inFlight = 0;
+        }
+
         if (inFlight < MaxInFlightFrames || forceSubmitDuringStartupStall)
         {
             try
@@ -499,4 +508,5 @@ internal sealed class MediaPipeGraphRunner : IDisposable
             return 0;
         }
     }
+
 }
