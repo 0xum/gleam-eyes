@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Gleam.Engine.Frames;
 using Gleam.Engine.Processing;
 using Gleam.Gestures.Models;
 
@@ -137,7 +138,81 @@ internal sealed class MediaPipePreviewWindowHost
                 _image.Source = _bitmap;
             }
 
-            _image.InvalidateVisual();
+            _window.Title = $"MediaPipe INPUT - {frame.Width}x{frame.Height} [{frame.PixelFormat}] ts={frame.TimestampNs / 1_000_000.0:F1}ms";
+        }
+        catch (Exception)
+        {
+            // Ignore UI update errors
+        }
+    }
+
+    public void UpdateFrame(RawFrame frame)
+    {
+        if (!_sessionActive)
+        {
+            return;
+        }
+
+        if (_window == null || _image == null)
+        {
+            return;
+        }
+
+        if (frame.Width <= 0 || frame.Height <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            EnsureBitmap(frame.Width, frame.Height);
+            if (_bitmap == null || _scratchBgra == null)
+            {
+                return;
+            }
+
+            var pixelFormat = frame.PixelFormat;
+            if (string.Equals(pixelFormat, "RGB24", StringComparison.OrdinalIgnoreCase))
+            {
+                ConvertRgb24ToBgra32(frame.Data, frame.Width, frame.Height, _scratchBgra);
+            }
+            else if (string.Equals(pixelFormat, "BGRA32", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(pixelFormat, "ARGB32", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(pixelFormat, "RGB32", StringComparison.OrdinalIgnoreCase))
+            {
+                CopyBgraLikeToBgra32(frame.Data, frame.Width, frame.Height, _scratchBgra);
+            }
+            else
+            {
+                return;
+            }
+
+            using (var locked = _bitmap.Lock())
+            {
+                unsafe
+                {
+                    var dstStride = locked.RowBytes;
+                    var srcStride = frame.Width * 4;
+                    var dstAddr = (byte*)locked.Address;
+                    fixed (byte* srcAddr = _scratchBgra)
+                    {
+                        for (var y = 0; y < frame.Height; y++)
+                        {
+                            Buffer.MemoryCopy(
+                                srcAddr + (y * srcStride),
+                                dstAddr + (y * dstStride),
+                                (ulong)dstStride,
+                                (ulong)srcStride);
+                        }
+                    }
+                }
+            }
+
+            if (!ReferenceEquals(_image.Source, _bitmap))
+            {
+                _image.Source = _bitmap;
+            }
+
             _window.Title = $"MediaPipe INPUT - {frame.Width}x{frame.Height} [{frame.PixelFormat}] ts={frame.TimestampNs / 1_000_000.0:F1}ms";
         }
         catch (Exception)
@@ -222,5 +297,11 @@ internal sealed class MediaPipePreviewWindowHost
             srcHandle.Free();
             dstHandle.Free();
         }
+    }
+
+    private static void CopyBgraLikeToBgra32(byte[] source, int width, int height, byte[] destination)
+    {
+        var byteCount = Math.Min(source.Length, width * height * 4);
+        Buffer.BlockCopy(source, 0, destination, 0, byteCount);
     }
 }

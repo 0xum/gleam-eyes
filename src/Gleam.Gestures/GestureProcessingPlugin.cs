@@ -15,7 +15,7 @@ namespace Gleam.Gestures;
 [PluginMetadata("GestureProcessing", "Plugin prepared to preprocess frames for MediaPipe", "1.1.0")]
 public class GestureProcessingPlugin : IFrameProcessingPlugin
 {
-    private static readonly TimeSpan PreviewUpdateInterval = TimeSpan.FromMilliseconds(66);
+    private static readonly TimeSpan PreviewUpdateInterval = TimeSpan.FromMilliseconds(33);
     private const int MaxLandmarkAgFrames = 15;
     private const int EmptySnapshotClearThresholdFrames = 3;
     private static readonly long PreviewUpdateIntervalTicks = (long)(PreviewUpdateInterval.TotalSeconds * Stopwatch.Frequency);
@@ -371,6 +371,24 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                 continue;
             }
 
+            var previewNowTick = Stopwatch.GetTimestamp();
+            var previewNextTick = Volatile.Read(ref _nextPreviewRenderTick);
+            if (previewNowTick >= previewNextTick)
+            {
+                Volatile.Write(ref _nextPreviewRenderTick, previewNowTick + PreviewUpdateIntervalTicks);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    try
+                    {
+                        _previewWindow.UpdateFrame(rawFrame);
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLogger.Log($"GestureProcessingPlugin: failed to update preview window: {ex.Message}");
+                    }
+                }, DispatcherPriority.Background);
+            }
+
             var preprocessStart = Stopwatch.GetTimestamp();
             frame = MediaPipeFramePreprocessor.Prepare(rawFrame);
             var preprocessElapsed = Stopwatch.GetTimestamp() - preprocessStart;
@@ -472,24 +490,6 @@ public class GestureProcessingPlugin : IFrameProcessingPlugin
                             // ignore stop failures after fault
                         }
                     }
-                }
-
-                var nowTick = Stopwatch.GetTimestamp();
-                var nextPreviewTick = Volatile.Read(ref _nextPreviewRenderTick);
-                if (nowTick >= nextPreviewTick)
-                {
-                    Volatile.Write(ref _nextPreviewRenderTick, nowTick + PreviewUpdateIntervalTicks);
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        try
-                        {
-            _previewWindow.UpdateFrame(frame);
-                        }
-                        catch (Exception ex)
-                        {
-                            PluginLogger.Log($"GestureProcessingPlugin: failed to update preview window: {ex.Message}");
-                        }
-                    }, DispatcherPriority.Background);
                 }
 
                 var runnerStats = _graphRunner.GetStats();
